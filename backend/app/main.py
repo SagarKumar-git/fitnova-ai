@@ -6,8 +6,7 @@ from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedi
 from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics
 
 # Automatically create database tables on startup
-Base.metadata.create_all(bind=engine)
-
+# Base.metadata.create_all(bind=engine)
 def seed_exercise_database():
     """Seeds default muscle groups and exercises if database is empty."""
     db = SessionLocal()
@@ -159,9 +158,8 @@ def seed_food_database():
         db.close()
 
 # Run seeders
-seed_food_database()
-seed_exercise_database()
-
+# seed_food_database()
+# seed_exercise_database()
 app = FastAPI(
     title="FitNova AI API",
     description="Backend API for FitNova AI - Personalized Fitness & Nutrition Platform",
