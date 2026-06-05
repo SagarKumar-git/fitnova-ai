@@ -194,6 +194,15 @@ app.include_router(exercises.router, prefix="/api")
 app.include_router(workouts.router, prefix="/api")
 app.include_router(workout_analytics.router, prefix="/api")
 
+
+@app.get("/", tags=["Root"])
+def root():
+    return {
+        "message": "FitNova API Running",
+        "docs": "/docs",
+        "health": "/api/health"
+    }
+
 @app.get("/api/health", tags=["Health"])
 def health_check():
     return {"status": "healthy", "service": "FitNova AI API"}
