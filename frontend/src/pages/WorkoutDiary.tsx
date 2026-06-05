@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
@@ -68,13 +69,13 @@ export const WorkoutDiary: React.FC = () => {
 
     try {
       // 1. Fetch active session
-      const activeRes = await fetch('http://127.0.0.1:8000/api/workouts/sessions/active', {
+      const activeRes = await fetch(`${API_BASE_URL}/workouts/sessions/active`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const activeData = await activeRes.json();
       
       // 2. Fetch routines templates
-      const templatesRes = await fetch('http://127.0.0.1:8000/api/workouts/templates', {
+      const templatesRes = await fetch(`${API_BASE_URL}/workouts/templates`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (templatesRes.ok) {
@@ -83,7 +84,7 @@ export const WorkoutDiary: React.FC = () => {
       }
 
       // 3. Fetch exercises database
-      const exercisesRes = await fetch('http://127.0.0.1:8000/api/exercises', {
+      const exercisesRes = await fetch(`${API_BASE_URL}/exercises`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (exercisesRes.ok) {
@@ -193,7 +194,7 @@ export const WorkoutDiary: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/workouts/sessions/start', {
+      const response = await fetch(`${API_BASE_URL}/workouts/sessions/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -311,7 +312,7 @@ export const WorkoutDiary: React.FC = () => {
     const targetSet = se.sets[setIndex];
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/workouts/sessions/log-set', {
+      const response = await fetch(`${API_BASE_URL}/workouts/sessions/log-set`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -355,7 +356,7 @@ export const WorkoutDiary: React.FC = () => {
       if (!token) return;
 
       try {
-        await fetch(`http://127.0.0.1:8000/api/workouts/sessions/delete-set/${targetSet.id}`, {
+        await fetch(`${API_BASE_URL}/workouts/sessions/delete-set/${targetSet.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -384,7 +385,7 @@ export const WorkoutDiary: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/workouts/sessions/finish', {
+      const response = await fetch(`${API_BASE_URL}/workouts/sessions/finish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

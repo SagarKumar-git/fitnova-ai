@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -97,7 +98,7 @@ export const ExerciseDatabase: React.FC = () => {
     if (!token) return;
 
     try {
-      let url = 'http://127.0.0.1:8000/api/exercises';
+  let url = `${API_BASE_URL}/exercises`;
       const params = [];
       if (searchQuery) params.push(`query=${searchQuery}`);
       if (selectedMuscleFilter) params.push(`muscle_group_id=${selectedMuscleFilter}`);
@@ -111,7 +112,7 @@ export const ExerciseDatabase: React.FC = () => {
         setExercises(data);
       }
 
-      const musclesRes = await fetch('http://127.0.0.1:8000/api/exercises/muscle-groups', {
+      const musclesRes = await fetch(`${API_BASE_URL}/exercises/muscle-groups`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (musclesRes.ok) {
@@ -136,7 +137,7 @@ export const ExerciseDatabase: React.FC = () => {
     if (!token) return;
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/exercises/${ex.id}/history`, {
+      const res = await fetch(`${API_BASE_URL}/exercises/${ex.id}/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -217,7 +218,7 @@ export const ExerciseDatabase: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/exercises', {
+      const response = await fetch(`${API_BASE_URL}/exercises`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

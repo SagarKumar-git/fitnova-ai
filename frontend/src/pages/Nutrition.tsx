@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -83,16 +84,16 @@ export const Nutrition: React.FC = () => {
 
     try {
       // 1. Fetch Food logs
-      const foodResponse = await fetch(`http://127.0.0.1:8000/api/logs/nutrition?logged_date=${selectedDate}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const foodResponse = await fetch(`${API_BASE_URL}/logs/nutrition`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
       if (foodResponse.ok) {
         const logs = await foodResponse.json();
         setFoodLogs(logs);
       }
 
       // 2. Fetch Water logs
-      const waterResponse = await fetch(`http://127.0.0.1:8000/api/logs/water?logged_date=${selectedDate}`, {
+      const waterResponse = await fetch(`${API_BASE_URL}/logs/water?logged_date=${selectedDate}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (waterResponse.ok) {
@@ -120,7 +121,7 @@ export const Nutrition: React.FC = () => {
 
       const token = localStorage.getItem('fitnova_token');
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/foods?query=${searchQuery}`, {
+       const response = await fetch(`${API_BASE_URL}/foods?query=${searchQuery}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (response.ok) {
@@ -142,7 +143,7 @@ export const Nutrition: React.FC = () => {
     setModalError(null);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/logs/nutrition', {
+      const response = await fetch(`${API_BASE_URL}/logs/nutrition`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -187,7 +188,7 @@ export const Nutrition: React.FC = () => {
 
     try {
       // 1. Create custom food
-      const createResponse = await fetch('http://127.0.0.1:8000/api/foods', {
+      const createResponse = await fetch(`${API_BASE_URL}/foods`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,7 +238,7 @@ export const Nutrition: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/logs/nutrition/${logId}`, {
+      const response = await fetch(`${API_BASE_URL}/logs/nutrition/${logId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -256,7 +257,7 @@ export const Nutrition: React.FC = () => {
 
     setIsWaterLogging(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/logs/water', {
+     const response = await fetch(`${API_BASE_URL}/logs/water`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -284,7 +285,7 @@ export const Nutrition: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/logs/water/${waterLogId}`, {
+     const response = await fetch(`${API_BASE_URL}/logs/water/${waterLogId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

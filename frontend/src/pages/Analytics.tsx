@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -36,9 +37,9 @@ export const Analytics: React.FC = () => {
 
     try {
       // 1. Fetch Profile to get target weight
-      const profileResp = await fetch('http://127.0.0.1:8000/api/profile', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+     const profileResp = await fetch(`${API_BASE_URL}/profile`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
       if (profileResp.ok) {
         const profileData = await profileResp.json();
         setTargetWeight(profileData.target_weight);
@@ -46,7 +47,7 @@ export const Analytics: React.FC = () => {
       }
 
       // 2. Fetch weight history
-      const historyResp = await fetch('http://127.0.0.1:8000/api/profile/weight-history', {
+      const historyResp = await fetch(`${API_BASE_URL}/profile/weight-history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (historyResp.ok) {
@@ -82,7 +83,7 @@ export const Analytics: React.FC = () => {
       // Construct timestamps from input date
       const timestamp = new Date(dateInput).toISOString();
       
-      const response = await fetch('http://127.0.0.1:8000/api/profile/weight-history', {
+      const response = await fetch(`${API_BASE_URL}/profile/weight-history`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

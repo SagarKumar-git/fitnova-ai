@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -47,7 +48,7 @@ export const WorkoutAnalytics: React.FC = () => {
     if (!token) return;
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/workout/analytics', {
+      const res = await fetch(`${API_BASE_URL}/workout/analytics`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -77,7 +78,7 @@ export const WorkoutAnalytics: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/workout/analytics/goals', {
+      const response = await fetch(`${API_BASE_URL}/workout/analytics/goals`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

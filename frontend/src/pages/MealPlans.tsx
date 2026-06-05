@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config';
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -64,21 +65,25 @@ export const MealPlans: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/meal-plans', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setPlans(data);
-        
-        // Setup default dates for each template card to today
-        const todayStr = new Date().toLocaleDateString('sv');
-        const datesMap = data.reduce((acc: any, plan: any) => {
-          acc[plan.meal_plan_id] = todayStr;
-          return acc;
-        }, {});
-        setApplyDates(datesMap);
-      }
+     const response = await fetch(`${API_BASE_URL}/meal-plans`, {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+if (response.ok) {
+  const data = await response.json();
+  setPlans(data);
+
+  const todayStr = new Date().toLocaleDateString('sv');
+
+  const datesMap = data.reduce((acc: any, plan: any) => {
+    acc[plan.meal_plan_id] = todayStr;
+    return acc;
+  }, {});
+
+  setApplyDates(datesMap);
+}
     } catch (err) {
       console.error("Failed to load templates:", err);
     } finally {
@@ -99,13 +104,19 @@ export const MealPlans: React.FC = () => {
       }
       const token = localStorage.getItem('fitnova_token');
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/foods?query=${searchQuery}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-          const result = await response.json();
-          setSearchResults(result);
-        }
+       const response = await fetch(
+  `${API_BASE_URL}/foods?query=${searchQuery}`,
+  {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  }
+);
+
+if (response.ok) {
+  const result = await response.json();
+  setSearchResults(result);
+}
       } catch (err) {
         console.error("Search error in plans:", err);
       }
@@ -156,7 +167,7 @@ export const MealPlans: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/meal-plans', {
+     const response = await fetch(`${API_BASE_URL}/meal-plans`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -192,7 +203,7 @@ export const MealPlans: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/meal-plans/${planId}`, {
+      const response = await fetch(`${API_BASE_URL}/meal-plans/${planId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -215,11 +226,15 @@ export const MealPlans: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/meal-plans/${planId}/apply?logged_date=${targetDate}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
+      const response = await fetch(
+  `${API_BASE_URL}/meal-plans/${planId}/apply?logged_date=${targetDate}`,
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  }
+);
       if (!response.ok) {
         throw new Error("Failed to clone templates.");
       }

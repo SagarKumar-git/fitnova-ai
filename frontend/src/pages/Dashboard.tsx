@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -47,7 +48,7 @@ export const Dashboard: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/dashboard', {
+      const response = await fetch(`${API_BASE_URL}/dashboard`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -77,7 +78,7 @@ export const Dashboard: React.FC = () => {
     setIsWaterLogging(true);
     try {
       const todayStr = new Date().toLocaleDateString('sv'); // sv locale returns YYYY-MM-DD
-      const response = await fetch('http://127.0.0.1:8000/api/logs/water', {
+      const response = await fetch(`${API_BASE_URL}/logs/water`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "../config";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
@@ -64,7 +65,7 @@ export const WorkoutTemplates: React.FC = () => {
     if (!token) return;
 
     try {
-      const templatesRes = await fetch('http://127.0.0.1:8000/api/workouts/templates', {
+      const templatesRes = await fetch(`${API_BASE_URL}/workouts/templates`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (templatesRes.ok) {
@@ -72,7 +73,7 @@ export const WorkoutTemplates: React.FC = () => {
         setTemplates(data);
       }
 
-      const exercisesRes = await fetch('http://127.0.0.1:8000/api/exercises', {
+      const exercisesRes = await fetch(`${API_BASE_URL}/exercises`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (exercisesRes.ok) {
@@ -158,7 +159,7 @@ export const WorkoutTemplates: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/workouts/templates', {
+      const response = await fetch(`${API_BASE_URL}/workouts/templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -188,7 +189,7 @@ export const WorkoutTemplates: React.FC = () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/workouts/templates/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/workouts/templates/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
