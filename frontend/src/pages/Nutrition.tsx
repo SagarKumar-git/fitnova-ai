@@ -84,11 +84,15 @@ export const Nutrition: React.FC = () => {
 
     try {
       // 1. Fetch Food logs
-      const foodResponse = await fetch(`${API_BASE_URL}/logs/nutrition`, {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
+      const foodResponse = await fetch(`${API_BASE_URL}/logs/nutrition?logged_date=${selectedDate}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (foodResponse.ok) {
         const logs = await foodResponse.json();
+        const response = { data: logs };
+        const nutritionLogs = logs;
+        console.log("Nutrition API Response", response.data);
+        console.log("Nutrition State", nutritionLogs);
         setFoodLogs(logs);
       }
 
