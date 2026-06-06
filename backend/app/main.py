@@ -161,6 +161,7 @@ def seed_food_database():
 # seed_food_database()
 # seed_exercise_database()
 app = FastAPI(
+    
     title="FitNova AI API",
     description="Backend API for FitNova AI - Personalized Fitness & Nutrition Platform",
     version="1.0.0"
@@ -178,8 +179,8 @@ origins = [
 ]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
