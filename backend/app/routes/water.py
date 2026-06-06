@@ -13,7 +13,7 @@ router = APIRouter(prefix="/logs/water", tags=["Water Logs"])
 
 @router.get("", response_model=List[WaterLogResponse])
 def get_water_logs(
-    logged_date: date = Query(default=date.today),
+    logged_date: date = Query(default_factory=date.today),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
