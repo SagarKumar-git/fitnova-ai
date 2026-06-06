@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Force SQLite DB configuration for tests
 os.environ["DATABASE_URL"] = "sqlite:///./test_workouts.db"
 
-from app.main import app
+from app.main import app, seed_food_database, seed_exercise_database
 from app.database import engine, Base
 
 class TestFitNovaWorkoutsAPI(unittest.TestCase):
@@ -19,6 +19,8 @@ class TestFitNovaWorkoutsAPI(unittest.TestCase):
     def setUpClass(cls):
         """Creates the test SQLite database structure and TestClient."""
         Base.metadata.create_all(bind=engine)
+        seed_food_database()
+        seed_exercise_database()
         cls.client = TestClient(app)
 
     @classmethod
