@@ -13,7 +13,7 @@ router = APIRouter(prefix="/logs/nutrition", tags=["Nutrition Logs"])
 
 @router.get("", response_model=List[FoodLogResponse])
 def get_nutrition_logs(
-    logged_date: date = Query(default=date.today),
+    logged_date: date = Query(default_factory=date.today),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):

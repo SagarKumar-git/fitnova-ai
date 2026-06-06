@@ -100,7 +100,7 @@ def delete_meal_plan(
 @router.post("/{plan_id}/apply", status_code=status.HTTP_200_OK)
 def apply_meal_plan(
     plan_id: str,
-    logged_date: date = Query(default=date.today),
+    logged_date: date = Query(default_factory=date.today),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
