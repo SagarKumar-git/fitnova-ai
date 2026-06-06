@@ -10,10 +10,15 @@ import {
   Sparkles, 
   LogOut, 
   Activity,
-  Coffee
+  Coffee,
+  X
 } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -30,16 +35,26 @@ export const Sidebar: React.FC = () => {
     <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col justify-between h-screen sticky top-0">
       <div className="p-6">
         {/* Brand Logo */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-gradient-to-tr from-neonLime to-neonCyan rounded-xl flex items-center justify-center neon-glow-lime">
-            <Activity className="w-6 h-6 text-black stroke-[2.5]" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-tr from-neonLime to-neonCyan rounded-xl flex items-center justify-center neon-glow-lime">
+              <Activity className="w-6 h-6 text-black stroke-[2.5]" />
+            </div>
+            <div>
+              <h1 className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-slate-100 to-zinc-400 bg-clip-text text-transparent">
+                FITNOVA <span className="text-neonLime">AI</span>
+              </h1>
+              <p className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">Phase 2 Active</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-slate-100 to-zinc-400 bg-clip-text text-transparent">
-              FITNOVA <span className="text-neonLime">AI</span>
-            </h1>
-            <p className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">Phase 2 Active</p>
-          </div>
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="lg:hidden p-1.5 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation Section */}
@@ -49,6 +64,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/dashboard"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <LayoutDashboard className="w-4 h-4" />
             <span>Dashboard</span>
@@ -57,6 +73,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/profile-setup"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <User className="w-4 h-4" />
             <span>Profile</span>
@@ -65,6 +82,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/nutrition"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <Apple className="w-4 h-4" />
             <span>Nutrition</span>
@@ -73,6 +91,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/meal-plans"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <Coffee className="w-4 h-4" />
             <span>Meal Plans</span>
@@ -81,6 +100,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/workouts"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <Dumbbell className="w-4 h-4" />
             <span>Workouts</span>
@@ -89,6 +109,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/exercises"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <Activity className="w-4 h-4" />
             <span>Exercise Library</span>
@@ -97,6 +118,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/analytics"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <LineChart className="w-4 h-4" />
             <span>Weight Analytics</span>
@@ -105,6 +127,7 @@ export const Sidebar: React.FC = () => {
           <NavLink 
             to="/workout-analytics"
             className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
           >
             <LineChart className="w-4 h-4" />
             <span>Workout Analytics</span>
