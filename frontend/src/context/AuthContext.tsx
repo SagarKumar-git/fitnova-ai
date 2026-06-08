@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "../config";
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 export interface User {
@@ -35,26 +35,137 @@ interface AuthContextType {
   profile: Profile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  sessionExpired: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, confirm_password: string, role?: string) => Promise<void>;
-  logout: () => void;
+  logout: (expired?: boolean) => void;
   fetchProfile: () => Promise<Profile | null>;
   updateProfile: (profileData: Omit<Profile, 'profile_id' | 'user_id' | 'created_at'>) => Promise<void>;
   refreshUser: () => Promise<void>;
+  clearSessionExpired: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ---------------------------------------------------------------------------
+// JWT helpers — pure functions, no side effects
+// ---------------------------------------------------------------------------
+
+/**
+ * Decodes the payload of a JWT without verifying the signature.
+ * Returns null if the token is malformed.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    // Base64url → Base64 → decode
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns true if the JWT is expired or cannot be parsed.
+ * Adds a 30-second clock-skew buffer.
+ */
+function isTokenExpired(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload.exp !== 'number') return true;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return payload.exp < nowSeconds - 30;
+}
+
+// ---------------------------------------------------------------------------
+// AuthProvider
+// ---------------------------------------------------------------------------
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
+
+  // Prevent duplicate expiry events (e.g. multiple concurrent 401s)
+  const expiredFired = useRef(false);
 
   // Get token helper
   const getToken = () => localStorage.getItem('fitnova_token');
 
+  // ---------------------------------------------------------------------------
+  // logout — clears all local state and storage
+  // ---------------------------------------------------------------------------
+  const logout = useCallback((expired = false) => {
+    localStorage.removeItem('fitnova_token');
+    localStorage.removeItem('fitnova_user');
+    setUser(null);
+    setProfile(null);
+    if (expired && !expiredFired.current) {
+      expiredFired.current = true;
+      setSessionExpired(true);
+    }
+  }, []);
+
+  const clearSessionExpired = useCallback(() => {
+    setSessionExpired(false);
+    expiredFired.current = false;
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // handleAuthError — called whenever a backend response is 401/403
+  // Detects whether it's an expired token and fires the correct logout path.
+  // ---------------------------------------------------------------------------
+  const handleAuthError = useCallback((status: number, token: string | null) => {
+    if (status === 401 || status === 403) {
+      const expired = token ? isTokenExpired(token) : true;
+      logout(expired);
+      return true; // signal: auth error handled
+    }
+    return false;
+  }, [logout]);
+
+  // ---------------------------------------------------------------------------
+  // apiFetch — drop-in fetch wrapper that auto-handles auth errors globally
+  // ---------------------------------------------------------------------------
+  const apiFetch = useCallback(
+    async (url: string, options: RequestInit = {}): Promise<Response> => {
+      const token = getToken();
+
+      // Pre-flight: if we have a token that is already expired, bail immediately
+      if (token && isTokenExpired(token)) {
+        logout(true);
+        // Return a synthetic 401 so callers can react without crashing
+        return new Response(JSON.stringify({ detail: 'Token expired' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      const headers: Record<string, string> = {
+        ...(options.headers as Record<string, string>),
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, { ...options, headers });
+
+      // Post-flight: handle 401/403 from backend
+      if (response.status === 401 || response.status === 403) {
+        handleAuthError(response.status, token);
+      }
+
+      return response;
+    },
+    [logout, handleAuthError]
+  );
+
+  // ---------------------------------------------------------------------------
   // Verify authentication on mount
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const initializeAuth = async () => {
       const token = getToken();
@@ -63,42 +174,40 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
+      // Immediately check local expiry before hitting the network
+      if (isTokenExpired(token)) {
+        logout(true);
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        // Try fetching profile or basic health check with token
-        // In FastAPI we protect profile reads
-        const response = await fetch(`${API_BASE_URL}/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
+        const response = await apiFetch(`${API_BASE_URL}/profile`);
 
         if (response.ok) {
           const profileData = await response.json();
           setProfile(profileData);
-          
-          // Let's deduce user from localStorage or make a call. 
-          // Since we stored user details on login, let's load it from localStorage.
+
           const storedUser = localStorage.getItem('fitnova_user');
           if (storedUser) {
             const parsedUser = JSON.parse(storedUser);
-            // Sync with profile check
             parsedUser.has_profile = true;
             setUser(parsedUser);
           }
+        } else if (response.status === 401 || response.status === 403) {
+          // handleAuthError already called inside apiFetch — nothing extra needed
         } else {
-          // If profile fetch fails (e.g. 404 meaning user exists but profile isn't setup),
-          // check if user details exist in localStorage
+          // 404 = no profile yet; user exists but hasn't set up profile
           const storedUser = localStorage.getItem('fitnova_user');
           if (storedUser) {
             setUser(JSON.parse(storedUser));
           } else {
-            // Token expired or invalid
-            logout();
+            logout(false);
           }
         }
       } catch (err) {
-        console.error("Auth initialization failed:", err);
-        // On network error, retain cached user if present
+        console.error('Auth initialization failed (network error):', err);
+        // On network error, retain cached user if present — don't force logout
         const storedUser = localStorage.getItem('fitnova_user');
         if (storedUser) {
           setUser(JSON.parse(storedUser));
@@ -109,10 +218,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     initializeAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // login
+  // ---------------------------------------------------------------------------
   const login = async (email: string, password: string) => {
     setIsLoading(true);
+    clearSessionExpired();
     try {
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -121,40 +235,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Login failed');
+        let message = 'Login failed. Please check your credentials.';
+        try {
+          const errorData = await response.json();
+          message = errorData.detail || message;
+        } catch {
+          // Response body not JSON-parseable
+        }
+        throw new Error(message);
       }
 
       const data = await response.json();
       localStorage.setItem('fitnova_token', data.access_token);
       localStorage.setItem('fitnova_user', JSON.stringify(data.user));
       setUser(data.user);
-      
+      expiredFired.current = false;
+
       // Auto fetch profile if it exists
       if (data.user.has_profile) {
         try {
-          const profileResp = await fetch(`${API_BASE_URL}/profile`, {
-            headers: { 'Authorization': `Bearer ${data.access_token}` }
-          });
+          const profileResp = await apiFetch(`${API_BASE_URL}/profile`);
           if (profileResp.ok) {
             const profileData = await profileResp.json();
             setProfile(profileData);
           }
         } catch (e) {
-          console.error("Failed to load profile after login", e);
+          console.error('Failed to load profile after login', e);
         }
       } else {
         setProfile(null);
       }
     } catch (error) {
-      logout();
+      logout(false);
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (name: string, email: string, password: string, confirm_password: string, role: string = "user") => {
+  // ---------------------------------------------------------------------------
+  // register
+  // ---------------------------------------------------------------------------
+  const register = async (
+    name: string,
+    email: string,
+    password: string,
+    confirm_password: string,
+    role: string = 'user'
+  ) => {
     setIsLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/auth/register`, {
@@ -164,39 +292,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Registration failed');
+        let message = 'Registration failed. Please try again.';
+        try {
+          const errorData = await response.json();
+          message = errorData.detail || message;
+        } catch {
+          // Response body not JSON-parseable
+        }
+        throw new Error(message);
       }
-      
-      // Registration successful! We don't automatically log in here according to standard APIs
-      // or we can auto-login if registration returns a token. Since registration returns UserResponse
-      // (not Token), the flow is: register -> redirect to login, or we can login them immediately.
-      // The register route returns UserResponse, so the register page will trigger login immediately
-      // or redirect to Login page. Let's make it redirect to login with a success message!
+      // Registration returns UserResponse — caller redirects to /login
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('fitnova_token');
-    localStorage.removeItem('fitnova_user');
-    setUser(null);
-    setProfile(null);
-  };
-
+  // ---------------------------------------------------------------------------
+  // fetchProfile
+  // ---------------------------------------------------------------------------
   const fetchProfile = async (): Promise<Profile | null> => {
     const token = getToken();
     if (!token) return null;
 
+    if (isTokenExpired(token)) {
+      logout(true);
+      return null;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/profile`);
       if (response.ok) {
         const profileData = await response.json();
         setProfile(profileData);
-        
+
         // Update user has_profile status locally
         if (user && !user.has_profile) {
           const updatedUser = { ...user, has_profile: true };
@@ -207,34 +335,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } else if (response.status === 404) {
         setProfile(null);
       }
+      // 401/403 handled inside apiFetch
     } catch (err) {
-      console.error("Error fetching profile:", err);
+      console.error('Error fetching profile (network error):', err);
     }
     return null;
   };
 
-  const updateProfile = async (profileData: Omit<Profile, 'profile_id' | 'user_id' | 'created_at'>) => {
+  // ---------------------------------------------------------------------------
+  // updateProfile
+  // ---------------------------------------------------------------------------
+  const updateProfile = async (
+    profileData: Omit<Profile, 'profile_id' | 'user_id' | 'created_at'>
+  ) => {
     const token = getToken();
-    if (!token) throw new Error("No authentication token");
+    if (!token) throw new Error('No authentication token. Please log in again.');
 
-    const response = await fetch(`${API_BASE_URL}/profile`, {
+    if (isTokenExpired(token)) {
+      logout(true);
+      throw new Error('Your session has expired. Please log in again.');
+    }
+
+    const response = await apiFetch(`${API_BASE_URL}/profile`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(profileData)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileData),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Failed to update profile');
+      let message = 'Failed to update profile.';
+      try {
+        const errorData = await response.json();
+        message = errorData.detail || message;
+      } catch {
+        // ignore
+      }
+      throw new Error(message);
     }
 
     const updatedProfile = await response.json();
     setProfile(updatedProfile);
-    
-    // Update local user details as profile is now completed
+
     if (user) {
       const updatedUser = { ...user, has_profile: true };
       localStorage.setItem('fitnova_user', JSON.stringify(updatedUser));
@@ -242,10 +383,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // refreshUser
+  // ---------------------------------------------------------------------------
   const refreshUser = async () => {
     const token = getToken();
     if (!token) return;
-    // Simple mock refresh or load profile to ensure status matches
+    if (isTokenExpired(token)) {
+      logout(true);
+      return;
+    }
     await fetchProfile();
   };
 
@@ -258,12 +405,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         profile,
         isAuthenticated,
         isLoading,
+        sessionExpired,
         login,
         register,
         logout,
         fetchProfile,
         updateProfile,
-        refreshUser
+        refreshUser,
+        clearSessionExpired,
       }}
     >
       {children}

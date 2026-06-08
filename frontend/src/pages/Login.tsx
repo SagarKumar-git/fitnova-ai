@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { SessionExpiredBanner } from '../components/ProtectedRoute';
 import { Activity, Mail, Lock, ShieldAlert, CheckCircle } from 'lucide-react';
 
 export const Login: React.FC = () => {
@@ -14,11 +15,11 @@ export const Login: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check state passed from registration
+  // Check state passed from registration or session expiry
   useEffect(() => {
-    const state = location.state as { registered?: boolean; email?: string } | null;
+    const state = location.state as { registered?: boolean; email?: string; sessionExpiredMessage?: string } | null;
     if (state?.registered) {
-      setSuccess("Account created successfully! Please sign in.");
+      setSuccess('Account created successfully! Please sign in.');
       if (state.email) {
         setEmail(state.email);
       }
@@ -78,6 +79,9 @@ export const Login: React.FC = () => {
         {/* Form Card */}
         <div className="glass-panel p-8 rounded-2xl border border-zinc-800 shadow-2xl relative">
           <h2 className="text-xl font-bold text-slate-100 mb-6">Sign in to FitNova</h2>
+
+          {/* Session expired banner — shown when redirected from a protected route */}
+          <SessionExpiredBanner />
 
           {success && (
             <div className="mb-5 p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/50 flex items-start gap-3">

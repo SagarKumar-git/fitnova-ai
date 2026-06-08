@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ShieldAlert } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -8,14 +9,15 @@ interface ProtectedRouteProps {
   requireAdmin?: boolean;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
-  children, 
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
   requireProfile = true,
-  requireAdmin = false
+  requireAdmin = false,
 }) => {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, sessionExpired, clearSessionExpired } = useAuth();
   const location = useLocation();
 
+  // ── Loading spinner ────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen bg-darkBg flex flex-col items-center justify-center">
@@ -30,19 +32,53 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
+  // ── Session expired — redirect to /login with banner state ─────────────────
+  if (!isAuthenticated && sessionExpired) {
+    clearSessionExpired();
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: location, sessionExpiredMessage: 'Your session has expired. Please log in again.' }}
+        replace
+      />
+    );
+  }
+
+  // ── Not authenticated — redirect to /login ─────────────────────────────────
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If profile setup is required but user has not done it, force redirect to profile-setup
+  // ── Profile required but not set up ───────────────────────────────────────
   if (requireProfile && user && !user.has_profile && location.pathname !== '/profile-setup') {
     return <Navigate to="/profile-setup" replace />;
   }
 
-  // If admin is required but user is not an admin, redirect to dashboard
+  // ── Admin required but user is not admin ──────────────────────────────────
   if (requireAdmin && user && user.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
+};
+
+// ---------------------------------------------------------------------------
+// SessionExpiredBanner — import and render inside Login page
+// Reads the message from react-router location state and auto-dismisses.
+// ---------------------------------------------------------------------------
+export const SessionExpiredBanner: React.FC = () => {
+  const location = useLocation();
+  const message: string | undefined = (location.state as { sessionExpiredMessage?: string })?.sessionExpiredMessage;
+
+  if (!message) return null;
+
+  return (
+    <div
+      role="alert"
+      className="mb-6 flex items-start gap-3 px-4 py-3.5 rounded-xl border border-amber-700/40 bg-amber-950/40 animate-fade-in"
+    >
+      <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+      <p className="text-sm text-amber-200 font-medium">{message}</p>
+    </div>
+  );
 };

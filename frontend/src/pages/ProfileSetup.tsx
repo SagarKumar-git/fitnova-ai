@@ -156,15 +156,14 @@ export const ProfileSetup: React.FC = () => {
   const content = (
     <div className="max-w-3xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-2">
-          {isEdit ? "Update Your Profile" : "Complete Your Profile Setup"}
+      <div className="mb-8 sm:mb-8 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex flex-wrap items-center gap-2 leading-snug">
+          {isEdit ? 'Update Your Profile' : 'Complete Your Profile Setup'}
         </h1>
-        <p className="text-zinc-400 mt-2">
-          {isEdit 
-            ? "Modify your baseline metrics and goals below to recalculate targets." 
-            : "To help FitNova AI personalize your experience, please provide your body metrics."
-          }
+        <p className="text-zinc-400 mt-2 text-sm sm:text-base">
+          {isEdit
+            ? 'Modify your baseline metrics and goals below to recalculate targets.'
+            : 'To help FitNova AI personalize your experience, please provide your body metrics.'}
         </p>
       </div>
 
