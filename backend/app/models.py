@@ -28,6 +28,7 @@ class User(Base):
     workout_sessions = relationship("WorkoutSession", back_populates="user", cascade="all, delete-orphan")
     ai_workout_plans = relationship("AIWorkoutPlan", back_populates="user", cascade="all, delete-orphan")
     ai_meal_plans = relationship("AIMealPlan", back_populates="user", cascade="all, delete-orphan")
+    user_achievements = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def has_profile(self) -> bool:
@@ -385,4 +386,34 @@ class AIMealPlan(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="ai_meal_plans")
+
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    key = Column(String, unique=True, index=True, nullable=False)  # 'first_login', etc.
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    icon = Column(String, nullable=False)  # e.g., 'LogIn', 'Dumbbell'
+    max_progress = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user_links = relationship("UserAchievement", back_populates="achievement", cascade="all, delete-orphan")
+
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    achievement_id = Column(Uuid, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False)
+    current_progress = Column(Integer, nullable=False, default=0)
+    is_unlocked = Column(Boolean, nullable=False, default=False)
+    unlocked_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="user_achievements")
+    achievement = relationship("Achievement", back_populates="user_links")
+
 

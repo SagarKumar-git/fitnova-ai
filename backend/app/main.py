@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base, SessionLocal
-from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai
+from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements
 
 # Automatically create database tables on startup
 # Base.metadata.create_all(bind=engine)
@@ -157,17 +157,49 @@ def seed_food_database():
     finally:
         db.close()
 
+def seed_achievements_database():
+    """Seeds default achievements/badges if database is empty."""
+    db = SessionLocal()
+    try:
+        if db.query(Achievement).count() == 0:
+            default_badges = [
+                Achievement(key="first_login", title="First Login", description="Log in to FitNova AI for the first time.", icon="LogIn", max_progress=1),
+                Achievement(key="first_workout", title="First Workout", description="Complete your first logged workout session.", icon="Dumbbell", max_progress=1),
+                Achievement(key="first_meal_plan", title="First Meal Plan", description="Create your first customized meal plan.", icon="Coffee", max_progress=1),
+                Achievement(key="seven_day_streak", title="7 Day Streak", description="Reach a workout consistency streak of 7 days.", icon="Flame", max_progress=7),
+                Achievement(key="thirty_day_streak", title="30 Day Streak", description="Reach a workout consistency streak of 30 days.", icon="Sparkles", max_progress=30),
+                Achievement(key="protein_master", title="Protein Master", description="Meet your daily protein target for a day.", icon="Zap", max_progress=1),
+                Achievement(key="hydration_king", title="Hydration King", description="Meet your daily hydration target for a day.", icon="Droplet", max_progress=1),
+                Achievement(key="ai_coach_user", title="AI Coach User", description="Generate a plan using the AI Coach.", icon="Sparkles", max_progress=1),
+                Achievement(key="gym_beast", title="Gym Beast", description="Log and complete 20 total workout sessions.", icon="Award", max_progress=20)
+            ]
+            db.bulk_save_objects(default_badges)
+            db.commit()
+            print("Achievements database successfully seeded!")
+    except Exception as e:
+        print(f"Error seeding achievements: {e}")
+    finally:
+        db.close()
+
+
 # Run seeders
 # seed_food_database()
 # seed_exercise_database()
 
-# Surgically initialize only the new AI tables on startup
+# Surgically initialize only the new AI and achievement tables on startup
 try:
     AIWorkoutPlan.__table__.create(bind=engine, checkfirst=True)
     AIMealPlan.__table__.create(bind=engine, checkfirst=True)
-    print("AI Coach tables successfully initialized!")
+    Achievement.__table__.create(bind=engine, checkfirst=True)
+    UserAchievement.__table__.create(bind=engine, checkfirst=True)
+    print("AI Coach and Achievement tables successfully initialized!")
 except Exception as e:
-    print(f"Error surgically initializing AI tables: {e}")
+    print(f"Error surgically initializing tables: {e}")
+
+# Run seeders
+# seed_food_database()
+# seed_exercise_database()
+seed_achievements_database()
 
 app = FastAPI(
 
@@ -208,6 +240,8 @@ app.include_router(workouts.router, prefix="/api")
 app.include_router(workout_analytics.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(achievements.router, prefix="/api")
+
 
 
 

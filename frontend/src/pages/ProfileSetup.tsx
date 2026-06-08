@@ -2,7 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
-import { Activity, Compass, CheckCircle2, AlertCircle } from 'lucide-react';
+import { 
+  Activity, 
+  Compass, 
+  CheckCircle2, 
+  AlertCircle, 
+  LogIn, 
+  Dumbbell, 
+  Coffee, 
+  Flame, 
+  Sparkles, 
+  Zap, 
+  Droplet, 
+  Award
+} from 'lucide-react';
+import { API_BASE_URL } from '../config';
+
 
 export const ProfileSetup: React.FC = () => {
   const { user, profile, updateProfile, fetchProfile } = useAuth();
@@ -28,6 +43,56 @@ export const ProfileSetup: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Achievements State
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [loadingAchievements, setLoadingAchievements] = useState(false);
+  const [errorAchievements, setErrorAchievements] = useState<string | null>(null);
+
+  const fetchAchievements = async () => {
+    if (!profile) return;
+    setLoadingAchievements(true);
+    setErrorAchievements(null);
+    const token = localStorage.getItem('fitnova_token');
+    try {
+      const response = await fetch(`${API_BASE_URL}/achievements`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAchievements(data);
+      } else {
+        throw new Error("Failed to load achievements.");
+      }
+    } catch (err: any) {
+      setErrorAchievements(err.message || "Error loading achievements.");
+    } finally {
+      setLoadingAchievements(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profile) {
+      fetchAchievements();
+    }
+  }, [profile]);
+
+  const getAchievementIcon = (iconName: string, isUnlocked: boolean) => {
+    const sizeClass = "w-6 h-6";
+    const colorClass = isUnlocked ? "text-neonLime" : "text-zinc-600";
+    switch (iconName) {
+      case 'LogIn': return <LogIn className={`${sizeClass} ${colorClass}`} />;
+      case 'Dumbbell': return <Dumbbell className={`${sizeClass} ${colorClass}`} />;
+      case 'Coffee': return <Coffee className={`${sizeClass} ${colorClass}`} />;
+      case 'Flame': return <Flame className={`${sizeClass} ${colorClass}`} />;
+      case 'Sparkles': return <Sparkles className={`${sizeClass} ${colorClass}`} />;
+      case 'Zap': return <Zap className={`${sizeClass} ${colorClass}`} />;
+      case 'Droplet': return <Droplet className={`${sizeClass} ${colorClass}`} />;
+      case 'Award': return <Award className={`${sizeClass} ${colorClass}`} />;
+      default: return <Award className={`${sizeClass} ${colorClass}`} />;
+    }
+  };
+
 
   // Sync state if profile loads asynchronously
   useEffect(() => {
@@ -299,7 +364,98 @@ export const ProfileSetup: React.FC = () => {
           {isSubmitting ? "Saving Metrics..." : "Save Profile & Calculate Targets"}
         </button>
       </form>
+
+      {/* Achievements Section */}
+      {isEdit && (
+        <div className="mt-12 pt-8 border-t border-zinc-900 space-y-6">
+          <div>
+            <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+              <Award className="w-6 h-6 text-neonLime" />
+              <span>Achievements & Badges</span>
+            </h2>
+            <p className="text-zinc-400 text-xs mt-1">
+              Reward your consistency and track active wellness milestones.
+            </p>
+          </div>
+
+          {loadingAchievements ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
+              {[...Array(6)].map((_, idx) => (
+                <div key={idx} className="h-36 bg-zinc-900/60 border border-zinc-850 rounded-2xl"></div>
+              ))}
+            </div>
+          ) : errorAchievements ? (
+            <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-xl text-xs text-zinc-500">
+              {errorAchievements}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {achievements.map((badge) => {
+                const percent = Math.min(100, Math.round((badge.current_progress / badge.max_progress) * 100));
+                
+                return (
+                  <div 
+                    key={badge.key} 
+                    className={`glass-panel p-5 rounded-2xl border transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${
+                      badge.is_unlocked 
+                        ? 'border-neonLime/30 hover:border-neonLime/50 shadow-[0_0_15px_rgba(163,230,53,0.05)] bg-zinc-900/30 animate-fade-in' 
+                        : 'border-zinc-850 opacity-60 hover:opacity-80'
+                    }`}
+                  >
+                    {badge.is_unlocked && (
+                      <div className="absolute top-0 right-0 w-16 h-16 bg-neonLime/5 rounded-full blur-lg pointer-events-none"></div>
+                    )}
+                    <div>
+                      {/* Badge Icon & Status Indicator */}
+                      <div className="flex items-center justify-between mb-3.5">
+                        <div className={`p-2 rounded-xl ${badge.is_unlocked ? 'bg-neonLime/10' : 'bg-zinc-950/80 border border-zinc-900'}`}>
+                          {getAchievementIcon(badge.icon, badge.is_unlocked)}
+                        </div>
+                        <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                          badge.is_unlocked 
+                            ? 'bg-neonLime/10 border-neonLime/20 text-neonLime' 
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                        }`}>
+                          {badge.is_unlocked ? 'Unlocked' : 'Locked'}
+                        </span>
+                      </div>
+
+                      <h4 className="font-extrabold text-sm text-slate-100">{badge.title}</h4>
+                      <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">{badge.description}</p>
+                    </div>
+
+                    <div className="mt-4 pt-3.5 border-t border-zinc-900/60 space-y-2">
+                      {/* Progress Metrics */}
+                      <div className="flex justify-between text-[10px] font-semibold text-zinc-400">
+                        <span>Progress</span>
+                        <span className={badge.is_unlocked ? 'text-neonLime' : 'text-zinc-500'}>
+                          {badge.current_progress} / {badge.max_progress}
+                        </span>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="w-full bg-zinc-950 h-1.5 rounded-full overflow-hidden border border-zinc-900">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${badge.is_unlocked ? 'bg-neonLime' : 'bg-zinc-700'}`}
+                          style={{ width: `${percent}%` }}
+                        ></div>
+                      </div>
+
+                      {badge.is_unlocked && badge.unlocked_at && (
+                        <div className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider text-right mt-1">
+                          Unlocked on {new Date(badge.unlocked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
+
   );
 
   // Wrap in Layout if the user has completed profile setup (meaning the sidebar should show up)

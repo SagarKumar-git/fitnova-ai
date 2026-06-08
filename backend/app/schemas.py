@@ -532,4 +532,18 @@ class AIMealResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class AchievementResponse(BaseModel):
+    key: str
+    title: str
+    description: str
+    icon: str
+    max_progress: int
+    current_progress: int
+    is_unlocked: bool
+    unlocked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 
