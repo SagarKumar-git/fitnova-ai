@@ -30,7 +30,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
   const activeLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-200 bg-gradient-to-r from-zinc-900 to-zinc-900 border-l-2 border-neonLime text-neonLime neon-glow-lime";
   const normalLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-zinc-400 hover:text-slate-100 hover:bg-zinc-900/50 border-l-2 border-transparent transition-all duration-200";
-  const disabledLinkClass = "flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium text-zinc-600 cursor-not-allowed select-none transition-all duration-200";
 
   return (
     <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col justify-between h-screen sticky top-0">
@@ -150,17 +149,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
             </>
           )}
 
-          <div className="pt-6 pb-2">
-            <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Coming Soon</p>
-          </div>
-
-          <div className={disabledLinkClass}>
-            <div className="flex items-center gap-3 text-zinc-600">
-              <Sparkles className="w-4 h-4" />
-              <span>AI Coach</span>
-            </div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-500 tracking-wide uppercase">Soon</span>
-          </div>
+          <NavLink 
+            to="/ai-coach"
+            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>AI Coach</span>
+          </NavLink>
         </nav>
       </div>
 

@@ -478,3 +478,58 @@ class AdminUserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class AIProfileResponse(BaseModel):
+    name: str
+    age: int
+    gender: str
+    height: float
+    weight: float
+    goal: str
+    experience_level: str
+    activity_level: str
+    bmi: float
+    bmr: float
+    tdee: float
+    daily_calories: float
+    daily_protein: float
+    daily_water: float
+
+class AIWorkoutCreate(BaseModel):
+    workout_type: str = Field(..., description="Home, Gym")
+    goal: str = Field(..., description="Muscle Gain, Fat Loss, Maintenance")
+    experience_level: str = Field(..., description="Beginner, Intermediate, Advanced")
+    days_per_week: int = Field(..., ge=1, le=7)
+
+class AIWorkoutResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    workout_type: str
+    goal: str
+    experience_level: str
+    days_per_week: int
+    plan_data: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AIMealCreate(BaseModel):
+    diet_type: str = Field(..., description="Vegetarian, Non Vegetarian")
+    diet_cuisine: str = Field(..., description="Indian Diet, Global")
+
+class AIMealResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    diet_type: str
+    diet_cuisine: str
+    calories: float
+    protein: float
+    carbohydrates: float
+    fat: float
+    meals_data: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+

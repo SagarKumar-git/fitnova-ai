@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Date, ForeignKey, Uuid, func, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Date, ForeignKey, Uuid, func, UniqueConstraint, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -26,6 +26,8 @@ class User(Base):
     workout_streak = relationship("WorkoutStreak", back_populates="user", uselist=False, cascade="all, delete-orphan")
     workout_templates = relationship("WorkoutTemplate", back_populates="user", cascade="all, delete-orphan")
     workout_sessions = relationship("WorkoutSession", back_populates="user", cascade="all, delete-orphan")
+    ai_workout_plans = relationship("AIWorkoutPlan", back_populates="user", cascade="all, delete-orphan")
+    ai_meal_plans = relationship("AIMealPlan", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def has_profile(self) -> bool:
@@ -351,3 +353,36 @@ class WorkoutSet(Base):
     # Relationships
     session = relationship("WorkoutSession", back_populates="sets")
     exercise = relationship("Exercise", back_populates="workout_sets")
+
+
+class AIWorkoutPlan(Base):
+    __tablename__ = "ai_workout_plans"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workout_type = Column(String, nullable=False)  # 'Home', 'Gym'
+    goal = Column(String, nullable=False)
+    experience_level = Column(String, nullable=False)
+    days_per_week = Column(Integer, nullable=False)
+    plan_data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="ai_workout_plans")
+
+
+class AIMealPlan(Base):
+    __tablename__ = "ai_meal_plans"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    diet_type = Column(String, nullable=False)  # 'Vegetarian', 'Non Vegetarian'
+    diet_cuisine = Column(String, nullable=False)  # 'Indian Diet', 'Global'
+    calories = Column(Float, nullable=False)
+    protein = Column(Float, nullable=False)
+    carbohydrates = Column(Float, nullable=False)
+    fat = Column(Float, nullable=False)
+    meals_data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="ai_meal_plans")
+

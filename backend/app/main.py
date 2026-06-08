@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base, SessionLocal
-from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin
+from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai
 
 # Automatically create database tables on startup
 # Base.metadata.create_all(bind=engine)
@@ -160,7 +160,17 @@ def seed_food_database():
 # Run seeders
 # seed_food_database()
 # seed_exercise_database()
+
+# Surgically initialize only the new AI tables on startup
+try:
+    AIWorkoutPlan.__table__.create(bind=engine, checkfirst=True)
+    AIMealPlan.__table__.create(bind=engine, checkfirst=True)
+    print("AI Coach tables successfully initialized!")
+except Exception as e:
+    print(f"Error surgically initializing AI tables: {e}")
+
 app = FastAPI(
+
     
     title="FitNova AI API",
     description="Backend API for FitNova AI - Personalized Fitness & Nutrition Platform",
@@ -197,6 +207,8 @@ app.include_router(exercises.router, prefix="/api")
 app.include_router(workouts.router, prefix="/api")
 app.include_router(workout_analytics.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
+
 
 
 @app.get("/", tags=["Root"])

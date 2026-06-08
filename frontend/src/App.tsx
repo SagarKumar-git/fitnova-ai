@@ -12,6 +12,7 @@ import { WorkoutTemplates } from './pages/WorkoutTemplates';
 import { ExerciseDatabase } from './pages/ExerciseDatabase';
 import { WorkoutAnalytics } from './pages/WorkoutAnalytics';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { AICoach } from './pages/AICoach';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -116,6 +117,16 @@ function App() {
               </ProtectedRoute>
             } 
           />
+
+          <Route 
+            path="/ai-coach" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <AICoach />
+              </ProtectedRoute>
+            } 
+          />
+
           
           {/* Catch-all Route: Redirect to dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
