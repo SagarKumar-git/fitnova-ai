@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base, SessionLocal
 from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin
 
 # Automatically create database tables on startup
 # Base.metadata.create_all(bind=engine)
@@ -196,6 +196,7 @@ app.include_router(meal_plans.router, prefix="/api")
 app.include_router(exercises.router, prefix="/api")
 app.include_router(workouts.router, prefix="/api")
 app.include_router(workout_analytics.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 
 @app.get("/", tags=["Root"])

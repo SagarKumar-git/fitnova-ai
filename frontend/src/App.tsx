@@ -11,6 +11,7 @@ import { WorkoutDiary } from './pages/WorkoutDiary';
 import { WorkoutTemplates } from './pages/WorkoutTemplates';
 import { ExerciseDatabase } from './pages/ExerciseDatabase';
 import { WorkoutAnalytics } from './pages/WorkoutAnalytics';
+import { AdminDashboard } from './pages/AdminDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -103,6 +104,15 @@ function App() {
             element={
               <ProtectedRoute requireProfile={true}>
                 <WorkoutAnalytics />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute requireProfile={true} requireAdmin={true}>
+                <AdminDashboard />
               </ProtectedRoute>
             } 
           />

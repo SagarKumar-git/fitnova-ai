@@ -11,7 +11,8 @@ import {
   LogOut, 
   Activity,
   Coffee,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -132,6 +133,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
             <LineChart className="w-4 h-4" />
             <span>Workout Analytics</span>
           </NavLink>
+
+          {user?.role === 'admin' && (
+            <>
+              <div className="pt-6 pb-2">
+                <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Admin Panel</p>
+              </div>
+              <NavLink 
+                to="/admin"
+                className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+                onClick={onClose}
+              >
+                <Shield className="w-4 h-4" />
+                <span>Admin Dashboard</span>
+              </NavLink>
+            </>
+          )}
 
           <div className="pt-6 pb-2">
             <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Coming Soon</p>

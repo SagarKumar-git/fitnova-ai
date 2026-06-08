@@ -458,3 +458,23 @@ class WorkoutAnalyticsResponse(BaseModel):
     workout_streak: WorkoutStreakResponse
     muscle_volume_breakdown: dict
     goals: Optional[WorkoutGoalResponse] = None
+
+class AdminStatsResponse(BaseModel):
+    total_users: int
+    total_food_logs: int
+    total_meal_plans: int
+    total_exercises: int
+    active_users: int
+
+class AdminUserResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
+    role: str
+    created_at: datetime
+    total_food_logs: int
+    total_meal_plans: int
+
+    class Config:
+        from_attributes = True
+
