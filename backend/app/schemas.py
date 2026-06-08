@@ -581,5 +581,18 @@ class AdminLeaderboardsResponse(BaseModel):
     top_streaks: List[LeaderboardUser]
 
 
+class AIInsightResponse(BaseModel):
+    id: uuid.UUID
+    type: str
+    title: str
+    message: str
+    status: str
+    priority: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 
 

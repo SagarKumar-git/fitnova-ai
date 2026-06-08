@@ -13,6 +13,7 @@ import { ExerciseDatabase } from './pages/ExerciseDatabase';
 import { WorkoutAnalytics } from './pages/WorkoutAnalytics';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { AICoach } from './pages/AICoach';
+import { AIInsights } from './pages/AIInsights';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -123,6 +124,15 @@ function App() {
             element={
               <ProtectedRoute requireProfile={true}>
                 <AICoach />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/ai-insights" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <AIInsights />
               </ProtectedRoute>
             } 
           />

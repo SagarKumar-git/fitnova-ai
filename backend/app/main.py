@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base, SessionLocal
-from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements
+from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements, insights
 
 # Automatically create database tables on startup
 # Base.metadata.create_all(bind=engine)
@@ -192,7 +192,8 @@ try:
     AIMealPlan.__table__.create(bind=engine, checkfirst=True)
     Achievement.__table__.create(bind=engine, checkfirst=True)
     UserAchievement.__table__.create(bind=engine, checkfirst=True)
-    print("AI Coach and Achievement tables successfully initialized!")
+    AIInsight.__table__.create(bind=engine, checkfirst=True)
+    print("AI Coach, Achievement, and AI Insight tables successfully initialized!")
 except Exception as e:
     print(f"Error surgically initializing tables: {e}")
 
@@ -241,6 +242,7 @@ app.include_router(workout_analytics.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(achievements.router, prefix="/api")
+app.include_router(insights.router, prefix="/api")
 
 
 

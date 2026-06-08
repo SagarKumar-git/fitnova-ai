@@ -29,6 +29,7 @@ class User(Base):
     ai_workout_plans = relationship("AIWorkoutPlan", back_populates="user", cascade="all, delete-orphan")
     ai_meal_plans = relationship("AIMealPlan", back_populates="user", cascade="all, delete-orphan")
     user_achievements = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
+    ai_insights = relationship("AIInsight", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def has_profile(self) -> bool:
@@ -415,5 +416,21 @@ class UserAchievement(Base):
 
     user = relationship("User", back_populates="user_achievements")
     achievement = relationship("Achievement", back_populates="user_links")
+
+
+class AIInsight(Base):
+    __tablename__ = "ai_insights"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    type = Column(String, nullable=False)  # 'hydration', 'protein', 'workout', 'calories', 'weight', 'prediction', 'achievement'
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    status = Column(String, nullable=False)  # 'success', 'warning', 'info'
+    priority = Column(String, nullable=False)  # 'low', 'medium', 'high'
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="ai_insights")
+
 
 

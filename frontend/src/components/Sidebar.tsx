@@ -12,7 +12,8 @@ import {
   Activity,
   Coffee,
   X,
-  Shield
+  Shield,
+  Lightbulb
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -156,6 +157,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
           >
             <Sparkles className="w-4 h-4" />
             <span>AI Coach</span>
+          </NavLink>
+
+          <NavLink 
+            to="/ai-insights"
+            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
+          >
+            <Lightbulb className="w-4 h-4" />
+            <span>AI Insights</span>
           </NavLink>
         </nav>
       </div>
