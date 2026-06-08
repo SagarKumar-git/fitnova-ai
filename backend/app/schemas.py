@@ -594,5 +594,49 @@ class AIInsightResponse(BaseModel):
         from_attributes = True
 
 
+class FoodRecognitionCreate(BaseModel):
+    food_name: str
+    calories: float
+    protein: float
+    carbohydrates: float
+    fat: float
+    confidence_score: float
+
+
+class FoodRecognitionResponse(BaseModel):
+    id: uuid.UUID
+    image_filename: str
+    image_hash: Optional[str] = None
+    status: str
+    processing_time_ms: Optional[float] = None
+    food_name: Optional[str] = None
+    calories: Optional[float] = None
+    protein: Optional[float] = None
+    carbohydrates: Optional[float] = None
+    fat: Optional[float] = None
+    confidence_score: Optional[float] = None
+    created_at: datetime
+    food_id: Optional[uuid.UUID] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FoodScanStatsResponse(BaseModel):
+    total_scans: int
+    weekly_scans: int
+    most_scanned_food: Optional[str] = None
+    total_calories_scanned: float
+
+
+class AdminFoodScanAnalyticsResponse(BaseModel):
+    total_scans: int
+    unique_users: int
+    most_scanned_food: Optional[str] = None
+    average_confidence: float
+    daily_activity: List[dict]
+
+
+
 
 

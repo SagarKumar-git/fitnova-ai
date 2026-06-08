@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, desc
 from typing import List, Optional
 import uuid
 from datetime import datetime, date, timedelta, time
 
 from app.database import get_db
-from app.models import User, FoodLog, MealPlan, Exercise, WorkoutSession, AIWorkoutPlan, AIMealPlan, UserAchievement, WorkoutStreak
+from app.models import User, FoodLog, MealPlan, Exercise, WorkoutSession, AIWorkoutPlan, AIMealPlan, UserAchievement, WorkoutStreak, FoodRecognitionLog
 from app.schemas import (
     AdminStatsResponse, 
     AdminUserResponse,
@@ -14,7 +14,8 @@ from app.schemas import (
     AdminAnalyticsResponse,
     UserRoleUpdate,
     LeaderboardUser,
-    AdminLeaderboardsResponse
+    AdminLeaderboardsResponse,
+    AdminFoodScanAnalyticsResponse
 )
 from app.auth import get_current_admin
 
@@ -451,3 +452,104 @@ def update_user_role(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update user role: {str(e)}"
         )
+
+
+@router.get("/analytics/food-scans", response_model=AdminFoodScanAnalyticsResponse)
+def get_admin_food_scan_analytics(
+    range_type: Optional[str] = Query(None, description="7d, 30d, 90d, custom"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    try:
+        today = date.today()
+        if range_type == "7d":
+            start = today - timedelta(days=6)
+            end = today
+        elif range_type == "90d":
+            start = today - timedelta(days=89)
+            end = today
+        elif range_type == "custom":
+            if not start_date or not end_date:
+                raise HTTPException(status_code=400, detail="start_date and end_date are required for custom range")
+            start = date.fromisoformat(start_date)
+            end = date.fromisoformat(end_date)
+        else: # Default or "30d"
+            start = today - timedelta(days=29)
+            end = today
+
+        start_datetime = datetime.combine(start, time.min)
+        end_datetime = datetime.combine(end, time.max)
+
+        scans_query = db.query(FoodRecognitionLog).filter(
+            FoodRecognitionLog.created_at >= start_datetime,
+            FoodRecognitionLog.created_at <= end_datetime,
+            FoodRecognitionLog.status == "completed"
+        )
+        total_scans = scans_query.count()
+
+        unique_users = db.query(func.count(func.distinct(FoodRecognitionLog.user_id))).filter(
+            FoodRecognitionLog.created_at >= start_datetime,
+            FoodRecognitionLog.created_at <= end_datetime,
+            FoodRecognitionLog.status == "completed"
+        ).scalar() or 0
+
+        avg_confidence = db.query(func.avg(FoodRecognitionLog.confidence_score)).filter(
+            FoodRecognitionLog.created_at >= start_datetime,
+            FoodRecognitionLog.created_at <= end_datetime,
+            FoodRecognitionLog.status == "completed"
+        ).scalar() or 0.0
+
+        most_scanned = None
+        mode_query = db.query(
+            FoodRecognitionLog.food_name,
+            func.count(FoodRecognitionLog.id).label("cnt")
+        ).filter(
+            FoodRecognitionLog.created_at >= start_datetime,
+            FoodRecognitionLog.created_at <= end_datetime,
+            FoodRecognitionLog.status == "completed",
+            FoodRecognitionLog.food_name != "Unknown Meal"
+        ).group_by(
+            FoodRecognitionLog.food_name
+        ).order_by(
+            desc("cnt")
+        ).first()
+        if mode_query:
+            most_scanned = mode_query[0]
+
+        dates_list = []
+        curr = start
+        while curr <= end:
+            dates_list.append(curr)
+            curr += timedelta(days=1)
+
+        activity_logs = db.query(FoodRecognitionLog.created_at).filter(
+            FoodRecognitionLog.created_at >= start_datetime,
+            FoodRecognitionLog.created_at <= end_datetime,
+            FoodRecognitionLog.status == "completed"
+        ).all()
+
+        date_counts = {}
+        for (created_at,) in activity_logs:
+            d_str = created_at.date().isoformat()
+            date_counts[d_str] = date_counts.get(d_str, 0) + 1
+
+        daily_activity = [
+            {"date": d.isoformat(), "count": date_counts.get(d.isoformat(), 0)}
+            for d in dates_list
+        ]
+
+        return AdminFoodScanAnalyticsResponse(
+            total_scans=total_scans,
+            unique_users=unique_users,
+            most_scanned_food=most_scanned,
+            average_confidence=round(avg_confidence, 2),
+            daily_activity=daily_activity
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch food scan analytics: {str(e)}"
+        )
+

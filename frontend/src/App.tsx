@@ -14,6 +14,7 @@ import { WorkoutAnalytics } from './pages/WorkoutAnalytics';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { AICoach } from './pages/AICoach';
 import { AIInsights } from './pages/AIInsights';
+import { FoodAIScanner } from './pages/FoodAIScanner';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -51,6 +52,15 @@ function App() {
             element={
               <ProtectedRoute requireProfile={true}>
                 <Nutrition />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/food-ai-scanner" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <FoodAIScanner />
               </ProtectedRoute>
             } 
           />

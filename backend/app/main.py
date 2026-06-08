@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine, Base, SessionLocal
-from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements, insights
+from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight, FoodRecognitionLog
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements, insights, food_scan
 
 # Automatically create database tables on startup
 # Base.metadata.create_all(bind=engine)
@@ -193,7 +193,8 @@ try:
     Achievement.__table__.create(bind=engine, checkfirst=True)
     UserAchievement.__table__.create(bind=engine, checkfirst=True)
     AIInsight.__table__.create(bind=engine, checkfirst=True)
-    print("AI Coach, Achievement, and AI Insight tables successfully initialized!")
+    FoodRecognitionLog.__table__.create(bind=engine, checkfirst=True)
+    print("AI Coach, Achievement, AI Insight, and Food Recognition tables successfully initialized!")
 except Exception as e:
     print(f"Error surgically initializing tables: {e}")
 
@@ -204,11 +205,18 @@ seed_achievements_database()
 
 app = FastAPI(
 
-    
+
     title="FitNova AI API",
     description="Backend API for FitNova AI - Personalized Fitness & Nutrition Platform",
     version="1.0.0"
 )
+
+from fastapi.staticfiles import StaticFiles
+import os
+
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+os.makedirs(os.path.join(static_dir, "uploads"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # CORS
 origins = [
@@ -243,6 +251,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(achievements.router, prefix="/api")
 app.include_router(insights.router, prefix="/api")
+app.include_router(food_scan.router, prefix="/api/v1")
 
 
 

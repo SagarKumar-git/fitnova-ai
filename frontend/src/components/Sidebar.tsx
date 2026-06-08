@@ -13,7 +13,8 @@ import {
   Coffee,
   X,
   Shield,
-  Lightbulb
+  Lightbulb,
+  Camera
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -87,6 +88,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
           >
             <Apple className="w-4 h-4" />
             <span>Nutrition</span>
+          </NavLink>
+
+          <NavLink 
+            to="/food-ai-scanner"
+            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+            onClick={onClose}
+          >
+            <Camera className="w-4 h-4" />
+            <span>Food Scanner</span>
           </NavLink>
 
           <NavLink 

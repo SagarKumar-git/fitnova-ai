@@ -30,6 +30,7 @@ class User(Base):
     ai_meal_plans = relationship("AIMealPlan", back_populates="user", cascade="all, delete-orphan")
     user_achievements = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
     ai_insights = relationship("AIInsight", back_populates="user", cascade="all, delete-orphan")
+    food_recognition_logs = relationship("FoodRecognitionLog", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def has_profile(self) -> bool:
@@ -431,6 +432,29 @@ class AIInsight(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="ai_insights")
+
+
+class FoodRecognitionLog(Base):
+    __tablename__ = "food_recognition_logs"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    image_filename = Column(String, nullable=False)
+    image_hash = Column(String, index=True, nullable=True)
+    status = Column(String, nullable=False, default="pending")  # 'pending', 'processing', 'completed', 'failed'
+    processing_time_ms = Column(Float, nullable=True)
+    food_name = Column(String, nullable=True)
+    calories = Column(Float, nullable=True)
+    protein = Column(Float, nullable=True)
+    carbohydrates = Column(Float, nullable=True)
+    fat = Column(Float, nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    food_id = Column(Uuid, ForeignKey("foods.food_id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="food_recognition_logs")
+    food = relationship("Food")
+
 
 
 

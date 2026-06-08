@@ -22,7 +22,8 @@ import {
   Sparkles,
   TrendingUp,
   X,
-  Eye
+  Eye,
+  Camera
 } from 'lucide-react';
 
 interface AdminStats {
@@ -62,6 +63,14 @@ interface AdminAnalyticsResponse {
   start_date: string;
   end_date: string;
   series: DailyAnalyticsPoint[];
+}
+
+interface FoodScanAnalytics {
+  total_scans: number;
+  unique_users: number;
+  most_scanned_food: string | null;
+  average_confidence: number;
+  daily_activity: { date: string; count: number }[];
 }
 
 interface LeaderboardUser {
@@ -494,6 +503,10 @@ export const AdminDashboard: React.FC = () => {
   const [analyticsData, setAnalyticsData] = useState<AdminAnalyticsResponse | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
+  // Food AI Analytics states
+  const [foodScanAnalytics, setFoodScanAnalytics] = useState<FoodScanAnalytics | null>(null);
+  const [loadingFoodScans, setLoadingFoodScans] = useState(false);
+
   // Leaderboard states
   const [leaderboards, setLeaderboards] = useState<LeaderboardsData | null>(null);
   const [activeLeaderboardTab, setActiveLeaderboardTab] = useState<'workouts' | 'nutrition' | 'ai' | 'achievements' | 'streaks'>('workouts');
@@ -574,6 +587,29 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchFoodScanAnalytics = async (range: string, start?: string, end?: string) => {
+    setLoadingFoodScans(true);
+    const token = localStorage.getItem('fitnova_token');
+    if (!token) return;
+    try {
+      let url = `${API_BASE_URL}/admin/analytics/food-scans?range_type=${range}`;
+      if (range === 'custom' && start && end) {
+        url += `&start_date=${start}&end_date=${end}`;
+      }
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFoodScanAnalytics(data);
+      }
+    } catch (err) {
+      console.error("Failed to load food scan analytics", err);
+    } finally {
+      setLoadingFoodScans(false);
+    }
+  };
+
   useEffect(() => {
     fetchAdminData();
   }, []);
@@ -581,6 +617,7 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (rangeType !== 'custom' || (analyticsStartDate && analyticsEndDate)) {
       fetchAnalytics(rangeType, analyticsStartDate, analyticsEndDate);
+      fetchFoodScanAnalytics(rangeType, analyticsStartDate, analyticsEndDate);
     }
   }, [rangeType, analyticsStartDate, analyticsEndDate]);
 
@@ -688,6 +725,16 @@ export const AdminDashboard: React.FC = () => {
       pt.ai_meal_plans
     ]);
     downloadCSV("fitnova_ai_usage.csv", headers, rows);
+  };
+
+  const exportFoodScans = () => {
+    if (!foodScanAnalytics) return;
+    const headers = ["Date", "Scan Count"];
+    const rows = foodScanAnalytics.daily_activity.map(pt => [
+      pt.date,
+      pt.count
+    ]);
+    downloadCSV("fitnova_food_scans.csv", headers, rows);
   };
 
   const handleRoleUpdate = async (userId: string, newRole: string) => {
@@ -841,6 +888,10 @@ export const AdminDashboard: React.FC = () => {
               <button onClick={exportAIUsage} className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-neonLime flex items-center gap-2 cursor-pointer">
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Export AI Usage</span>
+              </button>
+              <button onClick={exportFoodScans} className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-neonLime flex items-center gap-2 cursor-pointer">
+                <Camera className="w-3.5 h-3.5" />
+                <span>Export Food AI Scans</span>
               </button>
             </div>
           </div>
@@ -1058,6 +1109,62 @@ export const AdminDashboard: React.FC = () => {
               />
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Food AI Vision Scanner Analytics Section */}
+      <div className="glass-panel p-6 rounded-2xl border border-zinc-850 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-zinc-900 pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <Camera className="w-5 h-5 text-neonCyan" />
+              Food AI Scanner Platform Intelligence
+            </h2>
+            <p className="text-zinc-400 text-xs mt-0.5">
+              Monitor image-recognition scans, average confidence levels, and scan volumes across users.
+            </p>
+          </div>
+        </div>
+
+        {loadingFoodScans ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <RefreshCw className="w-8 h-8 text-neonCyan animate-spin" />
+            <span className="text-xs text-zinc-500">Retrieving Food AI analytics series...</span>
+          </div>
+        ) : foodScanAnalytics ? (
+          <div className="space-y-6">
+            {/* Horizontal Grid of metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Total AI Scans</span>
+                <span className="text-xl font-black text-slate-100 mt-1 block">{foodScanAnalytics.total_scans}</span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Unique Scan Users</span>
+                <span className="text-xl font-black text-neonCyan mt-1 block">{foodScanAnalytics.unique_users}</span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Average AI Confidence</span>
+                <span className="text-xl font-black text-neonLime mt-1 block">{(foodScanAnalytics.average_confidence * 100).toFixed(0)}%</span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Most Scanned Food</span>
+                <span className="text-xs font-bold text-slate-200 mt-2 block truncate">{foodScanAnalytics.most_scanned_food || "None matched"}</span>
+              </div>
+            </div>
+
+            {/* Daily activity chart */}
+            <div>
+              <NativeLineChart 
+                data={foodScanAnalytics.daily_activity.map(pt => ({ label: pt.date, value: pt.count }))} 
+                colorFrom="#06b6d4" 
+                colorTo="#a3e635" 
+                title="Daily Food AI Image Scans" 
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-zinc-500 text-xs text-center py-8">No Food AI data available for this range.</p>
         )}
       </div>
 

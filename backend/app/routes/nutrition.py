@@ -59,6 +59,11 @@ def log_food(
     # Sync daily aggregate totals in summaries cache
     sync_daily_nutrition(db, str(current_user.id), log_in.logged_date)
 
+    # Audit Logging
+    import logging
+    logger = logging.getLogger("fitnova.nutrition")
+    logger.info(f"AUDIT: User {current_user.id} logged meal: food_id={new_log.food_id}, servings={new_log.servings}, meal_type={new_log.meal_type}, date={new_log.logged_date}")
+
     return new_log
 
 @router.delete("/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
