@@ -465,6 +465,9 @@ class AdminStatsResponse(BaseModel):
     total_meal_plans: int
     total_exercises: int
     active_users: int
+    total_ai_workouts: Optional[int] = 0
+    total_ai_meal_plans: Optional[int] = 0
+    total_achievements: Optional[int] = 0
 
 class AdminUserResponse(BaseModel):
     id: uuid.UUID
@@ -474,6 +477,8 @@ class AdminUserResponse(BaseModel):
     created_at: datetime
     total_food_logs: int
     total_meal_plans: int
+    total_ai_workouts: Optional[int] = 0
+    total_achievements: Optional[int] = 0
 
     class Config:
         from_attributes = True
@@ -544,6 +549,37 @@ class AchievementResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DailyAnalyticsPoint(BaseModel):
+    date: str
+    registrations: int
+    active_users: int
+    food_logs: int
+    meal_plans: int
+    ai_workouts: int
+    ai_meal_plans: int
+
+class AdminAnalyticsResponse(BaseModel):
+    start_date: str
+    end_date: str
+    series: List[DailyAnalyticsPoint]
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+class LeaderboardUser(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
+    score: int
+
+class AdminLeaderboardsResponse(BaseModel):
+    top_workouts: List[LeaderboardUser]
+    top_nutrition: List[LeaderboardUser]
+    top_ai_coach: List[LeaderboardUser]
+    top_achievements: List[LeaderboardUser]
+    top_streaks: List[LeaderboardUser]
+
 
 
 
