@@ -1,0 +1,30 @@
+{
+  "short_name": "FitNova AI",
+  "name": "FitNova AI - Your Personal AI Fitness Coach",
+  "description": "Premium AI-driven fitness and nutrition ecosystem. Get custom training structures, scan meals, and track milestones.",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable_icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}

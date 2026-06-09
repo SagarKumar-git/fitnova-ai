@@ -15,9 +15,11 @@ from app.schemas import (
 )
 from app.auth import get_current_user
 from app.services.storage import StorageProvider, LocalStorageProvider
+from app.config import settings
 from app.services.vision import (
     VisionProvider,
     HeuristicVisionProvider,
+    GeminiVisionProvider,
     calculate_sha256,
     compress_image_if_large,
     process_food_recognition_job,
@@ -31,6 +33,8 @@ router = APIRouter(prefix="/ai/food-scan", tags=["AI Food Scanner"])
 
 # Dependency Injectors for Providers
 def get_vision_provider() -> VisionProvider:
+    if settings.GEMINI_API_KEY:
+        return GeminiVisionProvider()
     return HeuristicVisionProvider()
 
 def get_storage_provider() -> StorageProvider:
@@ -40,6 +44,7 @@ def get_storage_provider() -> StorageProvider:
 @router.post("", response_model=FoodRecognitionResponse, status_code=status.HTTP_201_CREATED)
 def upload_scan(
     file: UploadFile = File(...),
+    force_reanalyze: bool = False,
     current_user: User = Depends(get_current_user),
     vision_provider: VisionProvider = Depends(get_vision_provider),
     storage_provider: StorageProvider = Depends(get_storage_provider),
@@ -49,6 +54,7 @@ def upload_scan(
     Upload a food image, perform validation, rate limit check, hash check,
     compress if needed, and recognize nutrients synchronously.
     """
+    logger.info("AUDIT: Upload received")
     # 1. API Rate Limiting Check (Max 30 scans per user per hour)
     one_hour_ago = datetime.utcnow() - timedelta(hours=1)
     hourly_scans = db.query(FoodRecognitionLog).filter(
@@ -94,11 +100,13 @@ def upload_scan(
 
     # 4. Hash-based Deduplication
     image_hash = calculate_sha256(file_bytes)
-    existing_scan = db.query(FoodRecognitionLog).filter(
-        FoodRecognitionLog.user_id == current_user.id,
-        FoodRecognitionLog.image_hash == image_hash,
-        FoodRecognitionLog.status == "completed"
-    ).first()
+    existing_scan = None
+    if not force_reanalyze:
+        existing_scan = db.query(FoodRecognitionLog).filter(
+            FoodRecognitionLog.user_id == current_user.id,
+            FoodRecognitionLog.image_hash == image_hash,
+            FoodRecognitionLog.status == "completed"
+        ).first()
 
     if existing_scan:
         # Reuse previous recognition results directly to prevent re-upload and re-computation
@@ -114,6 +122,7 @@ def upload_scan(
             carbohydrates=existing_scan.carbohydrates,
             fat=existing_scan.fat,
             confidence_score=existing_scan.confidence_score,
+            provider=existing_scan.provider,
             food_id=existing_scan.food_id
         )
         db.add(new_log)
@@ -125,6 +134,7 @@ def upload_scan(
     # 5. PIL image validation & 5MB-10MB Compression
     try:
         final_bytes, compressed = compress_image_if_large(file_bytes, max_allowed_mb=5.0)
+        logger.info("AUDIT: Image validated")
     except Exception as e:
         # Corrupted images will raise errors inside compress_image_if_large
         raise HTTPException(

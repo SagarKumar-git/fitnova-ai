@@ -553,3 +553,21 @@ def get_admin_food_scan_analytics(
             detail=f"Failed to fetch food scan analytics: {str(e)}"
         )
 
+
+@router.get("/ai-analytics")
+def get_admin_ai_analytics(
+    current_admin: User = Depends(get_current_admin)
+):
+    """
+    Returns aggregated AI usage statistics and costs for the Admin Dashboard.
+    """
+    try:
+        from app.ai_logger import get_ai_analytics_summary
+        return get_ai_analytics_summary()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch AI usage analytics: {str(e)}"
+        )
+
+

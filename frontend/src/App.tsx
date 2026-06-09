@@ -15,6 +15,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { AICoach } from './pages/AICoach';
 import { AIInsights } from './pages/AIInsights';
 import { FoodAIScanner } from './pages/FoodAIScanner';
+import { LandingPage } from './pages/LandingPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -22,6 +23,9 @@ function App() {
     <Router>
       <AuthProvider>
         <Routes>
+          {/* Public Landing Page Route */}
+          <Route path="/" element={<LandingPage />} />
+
           {/* Public Authentication Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -148,8 +152,15 @@ function App() {
           />
 
           
-          {/* Catch-all Route: Redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          {/* Catch-all Route: send authenticated users to dashboard, others to login */}
+          <Route 
+            path="*" 
+            element={
+              <ProtectedRoute requireProfile={false}>
+                <Navigate to="/dashboard" replace />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       </AuthProvider>
     </Router>

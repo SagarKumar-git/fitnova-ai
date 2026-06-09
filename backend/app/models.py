@@ -449,6 +449,7 @@ class FoodRecognitionLog(Base):
     carbohydrates = Column(Float, nullable=True)
     fat = Column(Float, nullable=True)
     confidence_score = Column(Float, nullable=True)
+    provider = Column(String, nullable=True)  # 'gemini', 'heuristic'
     food_id = Column(Uuid, ForeignKey("foods.food_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 

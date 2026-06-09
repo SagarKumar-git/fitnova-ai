@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -10,6 +11,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+
 interface WeightLog {
   id: string;
   weight: number;
@@ -18,6 +20,7 @@ interface WeightLog {
 }
 
 export const Analytics: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [history, setHistory] = useState<WeightLog[]>([]);
   const [targetWeight, setTargetWeight] = useState<number>(70);
   const [loading, setLoading] = useState(true);
@@ -32,30 +35,25 @@ export const Analytics: React.FC = () => {
   const [isLogging, setIsLogging] = useState(false);
 
   const fetchData = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      // 1. Fetch Profile to get target weight
-     const profileResp = await fetch(`${API_BASE_URL}/profile`, {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
+      const [profileResp, historyResp] = await Promise.all([
+        apiFetch(`${API_BASE_URL}/profile`),
+        apiFetch(`${API_BASE_URL}/profile/weight-history`),
+      ]);
+
+      if (profileResp.status === 401 || profileResp.status === 403) return;
+
       if (profileResp.ok) {
         const profileData = await profileResp.json();
         setTargetWeight(profileData.target_weight);
         setWeightInput(profileData.weight);
       }
-
-      // 2. Fetch weight history
-      const historyResp = await fetch(`${API_BASE_URL}/profile/weight-history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
       if (historyResp.ok) {
         const historyData = await historyResp.json();
         setHistory(historyData);
       }
     } catch (err) {
-      console.error("Failed to load weight metrics:", err);
+      if (import.meta.env.DEV) console.error("Failed to load weight metrics:", err);
     } finally {
       setLoading(false);
     }
@@ -75,30 +73,18 @@ export const Analytics: React.FC = () => {
       return;
     }
 
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     setIsLogging(true);
     try {
-      // Construct timestamps from input date
       const timestamp = new Date(dateInput).toISOString();
-      
-      const response = await fetch(`${API_BASE_URL}/profile/weight-history`, {
+      const response = await apiFetch(`${API_BASE_URL}/profile/weight-history`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          weight: weightInput,
-          source: sourceInput,
-          recorded_at: timestamp
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weight: weightInput, source: sourceInput, recorded_at: timestamp })
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to log weight entry.");
-      }
+      if (response.status === 401 || response.status === 403) return;
+
+      if (!response.ok) throw new Error("Failed to log weight entry.");
 
       setSuccess("Weight logged successfully!");
       fetchData();

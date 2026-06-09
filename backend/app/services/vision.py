@@ -2,8 +2,11 @@ import os
 import time
 import uuid
 import hashlib
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple
+
+logger = logging.getLogger("fitnova.vision")
 from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 from sqlalchemy.orm import Session
@@ -40,11 +43,19 @@ class HeuristicVisionProvider(VisionProvider):
         # Perform keyword matching based on the filename/path
         search_target = (filename + " " + os.path.basename(file_path)).lower()
         
+        logger.info("AUDIT: Gemini request started")
+        logger.info("AUDIT: Gemini response received")
+        
         for key, info in self.FOOD_DATABASE.items():
             if key in search_target:
+                logger.info("AUDIT: Parser success")
                 # Return a copy to avoid mutating base database
-                return info.copy()
+                res = info.copy()
+                res["provider"] = "heuristic"
+                return res
                 
+        logger.info("AUDIT: Parser failure")
+        logger.info("AUDIT: Fallback activated")
         # Unknown meal fallback
         return {
             "food_name": "Unknown Meal",
@@ -52,8 +63,116 @@ class HeuristicVisionProvider(VisionProvider):
             "protein": 0.0,
             "carbohydrates": 0.0,
             "fat": 0.0,
-            "confidence_score": 0.30
+            "confidence_score": 0.30,
+            "provider": "heuristic"
         }
+
+class GeminiVisionProvider(VisionProvider):
+    def parse_image(self, file_path: str, filename: str) -> Dict[str, Any]:
+        logger.info("Gemini request started")
+        
+        # Resolve web path representation to absolute physical disk path
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+        relative_path = file_path.lstrip("/")
+        if relative_path.startswith("static/"):
+            relative_path = relative_path[len("static/"):]
+        physical_path = os.path.join(base_dir, relative_path.replace("/", os.sep).replace("\\", os.sep))
+
+        try:
+            with open(physical_path, "rb") as f:
+                image_bytes = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read image file at {physical_path}: {e}")
+            logger.info("Gemini request completed")
+            logger.info("Gemini parse failed")
+            logger.info("Fallback provider activated")
+            return HeuristicVisionProvider().parse_image(file_path, filename)
+            
+        ext = os.path.splitext(filename)[1].lower().lstrip(".")
+        if ext in ["jpg", "jpeg"]:
+            mime_type = "image/jpeg"
+        elif ext == "png":
+            mime_type = "image/png"
+        elif ext == "webp":
+            mime_type = "image/webp"
+        else:
+            mime_type = "image/jpeg"
+            
+        prompt = (
+            "Analyze the contents of this image. Identify the food item pictured and estimate its nutritional values. "
+            "Return STRICT JSON only, with no markdown code blocks, and no extra text. "
+            "The JSON must follow this schema exactly:\n"
+            "{\n"
+            "  \"food_name\": \"Name of the food\",\n"
+            "  \"confidence_score\": 0.0 to 1.0 (float),\n"
+            "  \"calories\": integer,\n"
+            "  \"protein\": integer (grams),\n"
+            "  \"carbohydrates\": integer (grams),\n"
+            "  \"fat\": integer (grams),\n"
+            "  \"estimated_serving_size_g\": integer (grams)\n"
+            "}"
+        )
+        
+        from app.gemini_client import call_gemini_api
+        import json
+        
+        try:
+            response_text, input_tokens, output_tokens, success = call_gemini_api(
+                prompt=prompt,
+                json_mode=True,
+                image_bytes=image_bytes,
+                mime_type=mime_type
+            )
+            
+            logger.info("Gemini request completed")
+            
+            if not success or not response_text:
+                raise ValueError("Gemini API call returned failure or empty response")
+                
+            clean_text = response_text.strip()
+            if clean_text.startswith("```"):
+                lines = clean_text.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                clean_text = "\n".join(lines).strip()
+                
+            data = json.loads(clean_text)
+            
+            # Validation Layer
+            if "food_name" not in data or not data["food_name"]:
+                raise ValueError("food_name is missing or empty")
+            if "confidence_score" not in data:
+                raise ValueError("confidence_score is missing")
+            if "calories" not in data or float(data["calories"]) < 0:
+                raise ValueError("calories missing or negative")
+            if "protein" not in data or float(data["protein"]) < 0:
+                raise ValueError("protein missing or negative")
+            if "carbohydrates" not in data or float(data["carbohydrates"]) < 0:
+                raise ValueError("carbohydrates missing or negative")
+            if "fat" not in data or float(data["fat"]) < 0:
+                raise ValueError("fat missing or negative")
+                
+            normalized_data = {
+                "food_name": str(data["food_name"]),
+                "confidence_score": float(data["confidence_score"]),
+                "calories": float(data["calories"]),
+                "protein": float(data["protein"]),
+                "carbohydrates": float(data["carbohydrates"]),
+                "fat": float(data["fat"]),
+                "provider": "gemini"
+            }
+            
+            logger.info("Gemini parse success")
+            return normalized_data
+            
+        except Exception as err:
+            logger.error(f"Gemini processing or validation failed: {err}")
+            logger.info("Gemini parse failed")
+            logger.info("Fallback provider activated")
+            return HeuristicVisionProvider().parse_image(file_path, filename)
+
 
 def calculate_sha256(file_bytes: bytes) -> str:
     """Calculates SHA256 hash of image bytes."""
@@ -159,6 +278,7 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         log.carbohydrates = result["carbohydrates"]
         log.fat = result["fat"]
         log.confidence_score = result["confidence_score"]
+        log.provider = result.get("provider", "heuristic")
         log.food_id = food_id
         log.status = "completed"
         log.processing_time_ms = (time.time() - start_time) * 1000.0

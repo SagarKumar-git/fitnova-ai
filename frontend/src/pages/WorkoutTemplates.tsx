@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
@@ -44,6 +45,7 @@ interface RoutineTemplate {
 
 export const WorkoutTemplates: React.FC = () => {
   const navigate = useNavigate();
+  const { apiFetch } = useAuth();
   const [templates, setTemplates] = useState<RoutineTemplate[]>([]);
   const [exercisesList, setExercisesList] = useState<ExerciseBrief[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,27 +63,18 @@ export const WorkoutTemplates: React.FC = () => {
 
   const fetchTemplatesAndExercises = async () => {
     setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const templatesRes = await fetch(`${API_BASE_URL}/workouts/templates`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (templatesRes.ok) {
-        const data = await templatesRes.json();
-        setTemplates(data);
-      }
+      const [templatesRes, exercisesRes] = await Promise.all([
+        apiFetch(`${API_BASE_URL}/workouts/templates`),
+        apiFetch(`${API_BASE_URL}/exercises`),
+      ]);
 
-      const exercisesRes = await fetch(`${API_BASE_URL}/exercises`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (exercisesRes.ok) {
-        const data = await exercisesRes.json();
-        setExercisesList(data);
-      }
+      if (templatesRes.status === 401 || templatesRes.status === 403) return;
+
+      if (templatesRes.ok) setTemplates(await templatesRes.json());
+      if (exercisesRes.ok) setExercisesList(await exercisesRes.json());
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     } finally {
       setLoading(false);
     }
@@ -141,10 +134,6 @@ export const WorkoutTemplates: React.FC = () => {
       return;
     }
 
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
-    // Map exercises to template structure
     const payload = {
       name,
       description: description || null,
@@ -159,14 +148,13 @@ export const WorkoutTemplates: React.FC = () => {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/workouts/templates`, {
+      const response = await apiFetch(`${API_BASE_URL}/workouts/templates`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
         setName('');
@@ -185,20 +173,12 @@ export const WorkoutTemplates: React.FC = () => {
 
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm("Are you sure you want to delete this workout routine template?")) return;
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/workouts/templates/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        fetchTemplatesAndExercises();
-      }
+      const response = await apiFetch(`${API_BASE_URL}/workouts/templates/${id}`, { method: 'DELETE' });
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) fetchTemplatesAndExercises();
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     }
   };
 

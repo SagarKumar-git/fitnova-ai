@@ -44,31 +44,43 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session 
     Dependency to get the currently authenticated user from the database.
     Checks the Bearer token in the Authorization header.
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token is missing",
+            detail="Authentication required. Please sign in to continue.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id_str: str = payload.get("sub")
         if user_id_str is None:
-            raise credentials_exception
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please sign in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         user_id = uuid.UUID(user_id_str)
-    except (JWTError, ValueError):
-        raise credentials_exception
-        
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session token. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account not found. Please contact support or register.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 def get_current_admin(current_user: User = Depends(get_current_user)) -> User:

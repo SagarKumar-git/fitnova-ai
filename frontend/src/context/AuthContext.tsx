@@ -43,6 +43,8 @@ interface AuthContextType {
   updateProfile: (profileData: Omit<Profile, 'profile_id' | 'user_id' | 'created_at'>) => Promise<void>;
   refreshUser: () => Promise<void>;
   clearSessionExpired: () => void;
+  /** Centralized fetch wrapper — auto-attaches Bearer token and handles 401/403 globally */
+  apiFetch: (url: string, options?: RequestInit) => Promise<Response>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -70,13 +72,15 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 /**
  * Returns true if the JWT is expired or cannot be parsed.
- * Adds a 30-second clock-skew buffer.
+ * Adds a 30-second clock-skew buffer (expire 30 seconds early to avoid
+ * making requests with a token that is about to expire).
  */
 function isTokenExpired(token: string): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload || typeof payload.exp !== 'number') return true;
   const nowSeconds = Math.floor(Date.now() / 1000);
-  return payload.exp < nowSeconds - 30;
+  // Expire the token 30 seconds early to prevent near-expiry failures
+  return payload.exp < nowSeconds + 30;
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +417,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateProfile,
         refreshUser,
         clearSessionExpired,
+        apiFetch,
       }}
     >
       {children}

@@ -4,12 +4,15 @@ from sqlalchemy import func
 from typing import List
 import uuid
 from datetime import datetime, date, timedelta
+import json
 
 from app.database import get_db
 from app.models import User, FoodLog, MealPlan, Exercise, WorkoutSession, AIWorkoutPlan, AIMealPlan, UserAchievement, WorkoutStreak, Achievement, WaterLog, DailyNutritionSummary, WeightHistory, FitnessMetrics, AIInsight
 from app.schemas import AIInsightResponse
 from app.auth import get_current_user
 from app.calculations import calculate_protein_target, calculate_water_target
+from app.gemini_client import call_gemini_api
+from app.ai_logger import log_ai_usage
 
 router = APIRouter(prefix="/ai", tags=["AI Insights"])
 
@@ -25,14 +28,12 @@ def get_user_insights(
 
         today = date.today()
         start_date = today - timedelta(days=6)
-        new_insights = []
 
         # ==========================================
-        # 1. HYDRATION INSIGHT
+        # FETCH & CALCULATE RAW DATA
         # ==========================================
+        # 1. Hydration Data
         water_target_ml = calculate_water_target(profile.weight, profile.activity_level) * 1000.0
-        
-        # Query total water logged per day for the last 7 days
         water_logs = db.query(
             WaterLog.logged_date,
             func.sum(WaterLog.amount_ml).label("daily_total")
@@ -45,7 +46,6 @@ def get_user_insights(
         ).all()
         
         water_by_date = {log.logged_date: log.daily_total for log in water_logs}
-        
         days_below_water = 0
         for i in range(7):
             check_day = start_date + timedelta(days=i)
@@ -53,31 +53,8 @@ def get_user_insights(
             if daily_intake < water_target_ml:
                 days_below_water += 1
 
-        if days_below_water > 0:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="hydration",
-                title="Hydration Alert",
-                message=f"Your hydration has been below target for {days_below_water} days in the last week. Drink at least {round(water_target_ml / 1000.0, 1)}L daily.",
-                status="warning",
-                priority="high" if days_below_water >= 4 else "medium"
-            ))
-        else:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="hydration",
-                title="Hydration Master",
-                message="Outstanding! You reached your daily hydration target on all of the last 7 days. Keep it up!",
-                status="success",
-                priority="low"
-            ))
-
-        # ==========================================
-        # 2. PROTEIN INSIGHT
-        # ==========================================
+        # 2. Protein Data
         protein_target = calculate_protein_target(profile.weight, profile.goal)
-        
-        # Query protein logged per day in the last 7 days from DailyNutritionSummary
         nutrition_summaries = db.query(
             DailyNutritionSummary.date,
             DailyNutritionSummary.total_protein
@@ -88,7 +65,6 @@ def get_user_insights(
         ).all()
         
         protein_by_date = {summary.date: summary.total_protein for summary in nutrition_summaries}
-        
         days_met_protein = 0
         for i in range(7):
             check_day = start_date + timedelta(days=i)
@@ -96,37 +72,7 @@ def get_user_insights(
             if daily_protein >= protein_target:
                 days_met_protein += 1
 
-        if days_met_protein >= 5:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="protein",
-                title="Protein Intake Confirmed",
-                message=f"Excellent! You reached your protein goal on {days_met_protein} of the last 7 days. Your daily target is {round(protein_target, 1)}g.",
-                status="success",
-                priority="low"
-            ))
-        elif days_met_protein >= 3:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="protein",
-                title="Protein Intake On Track",
-                message=f"You reached your protein goal on {days_met_protein} of the last 7 days. Focus on high-protein sources to consistently hit your {round(protein_target, 1)}g target.",
-                status="info",
-                priority="medium"
-            ))
-        else:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="protein",
-                title="Protein Target Alert",
-                message=f"Your protein intake was below target on {7 - days_met_protein} days this week. Aim to consume {round(protein_target, 1)}g daily to support recovery.",
-                status="warning",
-                priority="high"
-            ))
-
-        # ==========================================
-        # 3. WORKOUT CONSISTENCY INSIGHT
-        # ==========================================
+        # 3. Workout Consistency Data
         streak = db.query(WorkoutStreak).filter(WorkoutStreak.user_id == current_user.id).first()
         daily_streak = streak.daily_streak if streak else 0
         
@@ -134,40 +80,9 @@ def get_user_insights(
             WorkoutSession.user_id == current_user.id,
             WorkoutSession.started_at >= datetime.combine(today - timedelta(days=29), datetime.min.time())
         ).count()
-        
         consistency_score = min(100, round((completed_in_30_days / 12.0) * 100))
-        
-        if daily_streak >= 3:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="workout",
-                title="Workout Streak Active",
-                message=f"You are on a hot {daily_streak}-day workout streak! Consistency score is {consistency_score}% for the last 30 days. Recovery tip: prioritize stretching and sleep.",
-                status="success",
-                priority="medium"
-            ))
-        elif daily_streak > 0:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="workout",
-                title="Consistency Building",
-                message=f"Keep it rolling! You're on a {daily_streak}-day streak. Your 30-day consistency score is {consistency_score}%. Plan your next session to keep the habit active.",
-                status="info",
-                priority="low"
-            ))
-        else:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="workout",
-                title="Resume Workout Streak",
-                message=f"No active workout streak. Consistency score: {consistency_score}%. Aim to log a workout template this week to re-establish your fitness momentum.",
-                status="info",
-                priority="medium"
-            ))
 
-        # ==========================================
-        # 4. WEIGHT PREDICTION INSIGHT
-        # ==========================================
+        # 4. Weight Prediction Data
         weights = db.query(WeightHistory.weight, WeightHistory.recorded_at).filter(
             WeightHistory.user_id == current_user.id
         ).order_by(WeightHistory.recorded_at.asc()).all()
@@ -189,7 +104,6 @@ def get_user_insights(
             weekly_progress = -0.5 if profile.goal == "Fat Loss" else 0.25 if profile.goal == "Muscle Gain" else 0.0
 
         expected_weight_30d = current_weight + (weekly_progress / 7.0) * 30
-        
         if (profile.goal == "Fat Loss" and weekly_progress < 0) or (profile.goal == "Muscle Gain" and weekly_progress > 0):
             days_to_target = (target_weight - current_weight) / (weekly_progress / 7.0)
             if 0 < days_to_target < 365:
@@ -199,45 +113,11 @@ def get_user_insights(
         else:
             target_date = today + timedelta(days=90)
 
-        is_progressing = (profile.goal == "Fat Loss" and weekly_progress < 0) or (profile.goal == "Muscle Gain" and weekly_progress > 0) or (profile.goal == "Maintenance" and abs(weekly_progress) < 0.2)
-        
-        new_insights.append(AIInsight(
-            user_id=current_user.id,
-            type="weight",
-            title="Weight Prediction & Target Timeline",
-            message=f"At your current rate of {round(abs(weekly_progress), 2)} kg/week, you will reach your target weight of {round(target_weight, 1)} kg around {target_date.strftime('%B %d, %Y')}. Expected weight in 30 days: {round(expected_weight_30d, 1)} kg.",
-            status="success" if is_progressing else "info",
-            priority="medium"
-        ))
-
-        # ==========================================
-        # 5. AI COACH USAGE
-        # ==========================================
+        # 5. AI Coach Usage Data
         ai_workouts_count = db.query(AIWorkoutPlan).filter(AIWorkoutPlan.user_id == current_user.id).count()
         ai_meals_count = db.query(AIMealPlan).filter(AIMealPlan.user_id == current_user.id).count()
-        
-        if ai_workouts_count == 0 or ai_meals_count == 0:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="prediction",
-                title="Unlock AI Coaching",
-                message="Maximize your results by generating custom workout and meal schedules in the AI Coach tab.",
-                status="info",
-                priority="medium"
-            ))
-        else:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="prediction",
-                title="AI Coach Recommendations",
-                message=f"You have generated {ai_workouts_count} AI workouts and {ai_meals_count} meals. Refresh your plans weekly to align with biometric adaptations.",
-                status="success",
-                priority="low"
-            ))
 
-        # ==========================================
-        # 6. ACHIEVEMENT PROGRESS
-        # ==========================================
+        # 6. Achievements Data
         near_achievement = db.query(
             UserAchievement, Achievement
         ).join(
@@ -250,28 +130,222 @@ def get_user_insights(
             (Achievement.max_progress - UserAchievement.current_progress).asc()
         ).first()
 
+        # ==========================================
+        # GEMINI INSIGHTS GENERATION
+        # ==========================================
+        # Compile prompt for Gemini
+        prompt = (
+            f"Analyze the user's fitness and nutrition tracking data for the last week and generate exactly 6 highly personalized coaching insights.\n"
+            f"User Profile & Goals:\n"
+            f"- Goal: {profile.goal}\n"
+            f"- Experience Level: {profile.experience_level}\n"
+            f"- Activity Level: {profile.activity_level}\n"
+            f"- Weight rate of change: {round(weekly_progress, 2)} kg/week\n"
+            f"- Current Weight: {round(current_weight, 1)} kg\n"
+            f"- Target Weight: {round(target_weight, 1)} kg\n"
+            f"- Target Date to Reach Goal Weight: {target_date.strftime('%B %d, %Y')}\n"
+            f"- Expected Weight in 30 Days: {round(expected_weight_30d, 1)} kg\n\n"
+            f"Activity Metrics:\n"
+            f"- Daily Water Intake Target: {round(water_target_ml / 1000.0, 1)} L\n"
+            f"- Water Intake Log: User fell below target on {days_below_water} out of the last 7 days.\n"
+            f"- Daily Protein Intake Target: {round(protein_target, 1)} g\n"
+            f"- Protein Intake Log: User met their target on {days_met_protein} out of the last 7 days.\n"
+            f"- Workout Streak: {daily_streak} days active streak. 30-day consistency score is {consistency_score}%.\n"
+            f"- AI Coach Tool Usage: User generated {ai_workouts_count} AI workouts and {ai_meals_count} AI meal plans.\n"
+        )
         if near_achievement:
             user_ach, ach = near_achievement
             remaining = ach.max_progress - user_ach.current_progress
-            unit = "workout" if "workout" in ach.key or "beast" in ach.key else "day"
-            suffix = f"{unit}{'s' if remaining > 1 else ''}"
+            prompt += f"- Badge Unlock Progress: User is close to unlocking the badge '{ach.title}' ({ach.description}). Only {remaining} more needed.\n"
+        else:
+            prompt += f"- Badge Unlock Progress: Encourage logging workouts/meals to earn badges.\n"
+
+        prompt += (
+            f"\nYou must return a JSON array containing exactly 6 insight objects. Each object must have the following fields:\n"
+            f"- 'type': string, must be exactly one of: 'hydration', 'protein', 'workout', 'weight', 'prediction', 'achievement'\n"
+            f"- 'title': string (a short, punchy title)\n"
+            f"- 'message': string (actionable coaching recommendation tailored to the metrics above, encouraging and professional)\n"
+            f"- 'status': string, must be exactly one of: 'success', 'warning', 'info'\n"
+            f"- 'priority': string, must be exactly one of: 'low', 'medium', 'high'\n"
+        )
+
+        new_insights = []
+        success = False
+        model_name = "gemini-2.5-flash"
+        input_tokens = 0
+        output_tokens = 0
+        response_text = None
+
+        response_text, in_t, out_t, ok = call_gemini_api(prompt, json_mode=True)
+        if ok and response_text:
+            try:
+                insights_list = json.loads(response_text)
+                if isinstance(insights_list, list) and len(insights_list) > 0:
+                    for item in insights_list:
+                        new_insights.append(AIInsight(
+                            user_id=current_user.id,
+                            type=item.get("type", "prediction"),
+                            title=item.get("title", "Insight Update"),
+                            message=item.get("message", ""),
+                            status=item.get("status", "info"),
+                            priority=item.get("priority", "medium")
+                        ))
+                    input_tokens = in_t
+                    output_tokens = out_t
+                    success = True
+            except Exception as parse_err:
+                print(f"Failed to parse Gemini insights JSON: {parse_err}")
+
+        # Fallback to rule-based logic if Gemini fails
+        if not success:
+            model_name = "rule-based-fallback"
+            new_insights = []
+            
+            # 1. Hydration insight fallback
+            if days_below_water > 0:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="hydration",
+                    title="Hydration Alert",
+                    message=f"Your hydration has been below target for {days_below_water} days in the last week. Drink at least {round(water_target_ml / 1000.0, 1)}L daily.",
+                    status="warning",
+                    priority="high" if days_below_water >= 4 else "medium"
+                ))
+            else:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="hydration",
+                    title="Hydration Master",
+                    message="Outstanding! You reached your daily hydration target on all of the last 7 days. Keep it up!",
+                    status="success",
+                    priority="low"
+                ))
+
+            # 2. Protein insight fallback
+            if days_met_protein >= 5:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="protein",
+                    title="Protein Intake Confirmed",
+                    message=f"Excellent! You reached your protein goal on {days_met_protein} of the last 7 days. Your daily target is {round(protein_target, 1)}g.",
+                    status="success",
+                    priority="low"
+                ))
+            elif days_met_protein >= 3:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="protein",
+                    title="Protein Intake On Track",
+                    message=f"You reached your protein goal on {days_met_protein} of the last 7 days. Focus on high-protein sources to consistently hit your {round(protein_target, 1)}g target.",
+                    status="info",
+                    priority="medium"
+                ))
+            else:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="protein",
+                    title="Protein Target Alert",
+                    message=f"Your protein intake was below target on {7 - days_met_protein} days this week. Aim to consume {round(protein_target, 1)}g daily to support recovery.",
+                    status="warning",
+                    priority="high"
+                ))
+
+            # 3. Workout consistency insight fallback
+            if daily_streak >= 3:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="workout",
+                    title="Workout Streak Active",
+                    message=f"You are on a hot {daily_streak}-day workout streak! Consistency score is {consistency_score}% for the last 30 days. Recovery tip: prioritize stretching and sleep.",
+                    status="success",
+                    priority="medium"
+                ))
+            elif daily_streak > 0:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="workout",
+                    title="Consistency Building",
+                    message=f"Keep it rolling! You're on a {daily_streak}-day streak. Your 30-day consistency score is {consistency_score}%. Plan your next session to keep the habit active.",
+                    status="info",
+                    priority="low"
+                ))
+            else:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="workout",
+                    title="Resume Workout Streak",
+                    message=f"No active workout streak. Consistency score: {consistency_score}%. Aim to log a workout template this week to re-establish your fitness momentum.",
+                    status="info",
+                    priority="medium"
+                ))
+
+            # 4. Weight prediction insight fallback
+            is_progressing = (profile.goal == "Fat Loss" and weekly_progress < 0) or (profile.goal == "Muscle Gain" and weekly_progress > 0) or (profile.goal == "Maintenance" and abs(weekly_progress) < 0.2)
             new_insights.append(AIInsight(
                 user_id=current_user.id,
-                type="achievement",
-                title="Badge Unlock Close!",
-                message=f"You are only {remaining} {suffix} away from unlocking '{ach.title}'. {ach.description}",
-                status="info",
+                type="weight",
+                title="Weight Prediction & Target Timeline",
+                message=f"At your current rate of {round(abs(weekly_progress), 2)} kg/week, you will reach your target weight of {round(target_weight, 1)} kg around {target_date.strftime('%B %d, %Y')}. Expected weight in 30 days: {round(expected_weight_30d, 1)} kg.",
+                status="success" if is_progressing else "info",
                 priority="medium"
             ))
-        else:
-            new_insights.append(AIInsight(
-                user_id=current_user.id,
-                type="achievement",
-                title="Achievements Goal",
-                message="Keep tracking meals, water, and exercise sessions to unlock badges and build new healthy habits.",
-                status="info",
-                priority="low"
-            ))
+
+            # 5. AI Coach usage insight fallback
+            if ai_workouts_count == 0 or ai_meals_count == 0:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="prediction",
+                    title="Unlock AI Coaching",
+                    message="Maximize your results by generating custom workout and meal schedules in the AI Coach tab.",
+                    status="info",
+                    priority="medium"
+                ))
+            else:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="prediction",
+                    title="AI Coach Recommendations",
+                    message=f"You have generated {ai_workouts_count} AI workouts and {ai_meals_count} meals. Refresh your plans weekly to align with biometric adaptations.",
+                    status="success",
+                    priority="low"
+                ))
+
+            # 6. Achievement progress insight fallback
+            if near_achievement:
+                user_ach, ach = near_achievement
+                remaining = ach.max_progress - user_ach.current_progress
+                unit = "workout" if "workout" in ach.key or "beast" in ach.key else "day"
+                suffix = f"{unit}{'s' if remaining > 1 else ''}"
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="achievement",
+                    title="Badge Unlock Close!",
+                    message=f"You are only {remaining} {suffix} away from unlocking '{ach.title}'. {ach.description}",
+                    status="info",
+                    priority="medium"
+                ))
+            else:
+                new_insights.append(AIInsight(
+                    user_id=current_user.id,
+                    type="achievement",
+                    title="Achievements Goal",
+                    message="Keep tracking meals, water, and exercise sessions to unlock badges and build new healthy habits.",
+                    status="info",
+                    priority="low"
+                ))
+
+        # Log AI usage analytics locally
+        log_ai_usage(
+            user_id=current_user.id,
+            user_name=current_user.name,
+            feature="insights",
+            prompt=prompt,
+            response=response_text if success else json.dumps([{"type": insight.type, "title": insight.title, "message": insight.message, "status": insight.status, "priority": insight.priority} for insight in new_insights]),
+            success=success,
+            model=model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens
+        )
 
         # Overwrite outdated insights: Delete old and save new
         db.query(AIInsight).filter(AIInsight.user_id == current_user.id).delete()

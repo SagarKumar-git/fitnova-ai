@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -32,6 +33,7 @@ interface AnalyticsResponse {
 }
 
 export const WorkoutAnalytics: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -44,13 +46,9 @@ export const WorkoutAnalytics: React.FC = () => {
 
   const fetchAnalytics = async () => {
     setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const res = await fetch(`${API_BASE_URL}/workout/analytics`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(`${API_BASE_URL}/workout/analytics`);
+      if (res.status === 401 || res.status === 403) return;
       if (res.ok) {
         const analyticsData = await res.json();
         setData(analyticsData);
@@ -61,7 +59,7 @@ export const WorkoutAnalytics: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     } finally {
       setLoading(false);
     }
@@ -74,22 +72,19 @@ export const WorkoutAnalytics: React.FC = () => {
   const handleSaveGoals = async (e: React.FormEvent) => {
     e.preventDefault();
     setGoalSaveError(null);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/workout/analytics/goals`, {
+      const response = await apiFetch(`${API_BASE_URL}/workout/analytics/goals`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           target_workouts_per_week: targetWorkouts,
           target_volume: targetVolume,
           target_strength_goal: targetStrength || null
         })
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
         setShowGoalEditor(false);

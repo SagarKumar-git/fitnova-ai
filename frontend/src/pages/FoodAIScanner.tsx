@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { API_BASE_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { 
   Camera, 
   Trash2, 
@@ -36,6 +37,7 @@ interface ScanStats {
 }
 
 export const FoodAIScanner: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [stats, setStats] = useState<ScanStats>({
     total_scans: 0,
     weekly_scans: 0,
@@ -44,6 +46,7 @@ export const FoodAIScanner: React.FC = () => {
   });
   const [history, setHistory] = useState<FoodScanLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   
   // Upload & Scan states
   const [uploading, setUploading] = useState<boolean>(false);
@@ -80,34 +83,32 @@ export const FoodAIScanner: React.FC = () => {
   };
 
   const fetchStats = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/ai/food-scan/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/v1/ai/food-scan/stats`);
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         const data = await response.json();
         setStats(data);
       }
     } catch (err) {
-      console.error("Error fetching stats:", err);
+      if (import.meta.env.DEV) console.error("Error fetching stats:", err);
     }
   };
 
   const fetchHistory = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/ai/food-scan/history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/v1/ai/food-scan/history`);
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         const data = await response.json();
         setHistory(data);
+        setHistoryError(null);
+      } else {
+        setHistoryError('Failed to load scan history.');
       }
     } catch (err) {
-      console.error("Error fetching history:", err);
+      setHistoryError('Network error loading scan history.');
+      if (import.meta.env.DEV) console.error("Error fetching history:", err);
     }
   };
 
@@ -148,9 +149,6 @@ export const FoodAIScanner: React.FC = () => {
   };
 
   const handleUpload = async (file: File) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     setError(null);
     setLogSuccess(false);
 
@@ -171,13 +169,12 @@ export const FoodAIScanner: React.FC = () => {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/ai/food-scan`, {
+      const response = await apiFetch(`${API_BASE_URL}/v1/ai/food-scan`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
         body: formData
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (!response.ok) {
         const errData = await response.json();
@@ -205,8 +202,7 @@ export const FoodAIScanner: React.FC = () => {
   };
 
   const handleLogMeal = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token || !activeScan) return;
+    if (!activeScan) return;
 
     setLoggingMeal(true);
     setError(null);
@@ -226,12 +222,9 @@ export const FoodAIScanner: React.FC = () => {
       // If user modified values OR there was no matched food_id (e.g. Unknown Meal),
       // we must create a custom food item first.
       if (isModified || !targetFoodId) {
-        const foodResponse = await fetch(`${API_BASE_URL}/foods`, {
+        const foodResponse = await apiFetch(`${API_BASE_URL}/foods`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: editedName.trim(),
             brand: "AI Estimate",
@@ -245,6 +238,7 @@ export const FoodAIScanner: React.FC = () => {
           })
         });
 
+        if (foodResponse.status === 401 || foodResponse.status === 403) return;
         if (!foodResponse.ok) {
           const errData = await foodResponse.json();
           throw new Error(errData.detail || "Failed to register custom food item");
@@ -255,12 +249,9 @@ export const FoodAIScanner: React.FC = () => {
       }
 
       // Log the food log entry
-      const logResponse = await fetch(`${API_BASE_URL}/logs/nutrition`, {
+      const logResponse = await apiFetch(`${API_BASE_URL}/logs/nutrition`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           food_id: targetFoodId,
           meal_type: mealType,
@@ -269,6 +260,7 @@ export const FoodAIScanner: React.FC = () => {
         })
       });
 
+      if (logResponse.status === 401 || logResponse.status === 403) return;
       if (!logResponse.ok) {
         const errData = await logResponse.json();
         throw new Error(errData.detail || "Failed to log meal to nutrition logs");
@@ -286,24 +278,25 @@ export const FoodAIScanner: React.FC = () => {
   };
 
   const handleDeleteScan = async (id: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     if (activeScan && activeScan.id === id) {
       setActiveScan(null);
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/v1/ai/food-scan/${id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/v1/ai/food-scan/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
         await Promise.all([fetchStats(), fetchHistory()]);
+      } else {
+        setError('Failed to delete scan. Please try again.');
       }
     } catch (err) {
-      console.error("Failed to delete scan log:", err);
+      setError('Network error while deleting scan. Please try again.');
+      if (import.meta.env.DEV) console.error("Failed to delete scan log:", err);
     }
   };
 
@@ -323,7 +316,7 @@ export const FoodAIScanner: React.FC = () => {
     return (
       <Layout>
         <div className="flex items-center justify-center h-[60vh]">
-          <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 rounded-full border-4 border-neonCyan border-t-transparent animate-spin"></div>
             <p className="text-zinc-500 font-semibold uppercase tracking-wider text-xs">Booting AI Vision Engine</p>
           </div>
@@ -331,6 +324,19 @@ export const FoodAIScanner: React.FC = () => {
       </Layout>
     );
   }
+
+  // History load error state with retry
+  const HistoryErrorView = historyError ? (
+    <div className="py-6 text-center">
+      <p className="text-xs text-red-300 mb-3">{historyError}</p>
+      <button
+        onClick={fetchHistory}
+        className="px-4 py-2 bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-bold rounded-xl hover:border-neonLime/50 transition-all"
+      >
+        Retry
+      </button>
+    </div>
+  ) : null;
 
   return (
     <Layout>
@@ -610,12 +616,12 @@ export const FoodAIScanner: React.FC = () => {
               Scan History Timeline
             </h3>
 
-            {history.length === 0 ? (
+            {history.length === 0 && !historyError ? (
               <div className="py-8 text-center text-zinc-600">
                 <p className="text-xs italic">No scan logs available.</p>
                 <p className="text-[10px] mt-1">Uploaded food images will appear here chronologically.</p>
               </div>
-            ) : (
+            ) : historyError ? HistoryErrorView : (
               <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-1">
                 {history.map((scan) => (
                   <div 

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -61,6 +62,7 @@ interface ExerciseHistory {
 }
 
 export const ExerciseDatabase: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,27 +96,28 @@ export const ExerciseDatabase: React.FC = () => {
 
   const fetchExercisesAndFilters = async () => {
     setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-  let url = `${API_BASE_URL}/exercises`;
+      let url = `${API_BASE_URL}/exercises`;
       const params = [];
       if (searchQuery) params.push(`query=${searchQuery}`);
       if (selectedMuscleFilter) params.push(`muscle_group_id=${selectedMuscleFilter}`);
       if (params.length > 0) url += `?${params.join('&')}`;
 
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(url);
+      if (res.status === 401 || res.status === 403) {
+        setLoading(false);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setExercises(data);
       }
 
-      const musclesRes = await fetch(`${API_BASE_URL}/exercises/muscle-groups`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const musclesRes = await apiFetch(`${API_BASE_URL}/exercises/muscle-groups`);
+      if (musclesRes.status === 401 || musclesRes.status === 403) {
+        setLoading(false);
+        return;
+      }
       if (musclesRes.ok) {
         const data = await musclesRes.json();
         setMuscleGroups(data);
@@ -133,13 +136,12 @@ export const ExerciseDatabase: React.FC = () => {
   const handleOpenDetail = async (ex: Exercise) => {
     setSelectedExercise(ex);
     setDetailLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const res = await fetch(`${API_BASE_URL}/exercises/${ex.id}/history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(`${API_BASE_URL}/exercises/${ex.id}/history`);
+      if (res.status === 401 || res.status === 403) {
+        setDetailLoading(false);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setDetailData(data);
@@ -180,9 +182,6 @@ export const ExerciseDatabase: React.FC = () => {
       return;
     }
 
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     // Build contributions list
     const musclesPayload = [
       {
@@ -218,14 +217,17 @@ export const ExerciseDatabase: React.FC = () => {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/exercises`, {
+      const response = await apiFetch(`${API_BASE_URL}/exercises`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
+
+      if (response.status === 401 || response.status === 403) {
+        return;
+      }
 
       if (response.ok) {
         setCustomName('');

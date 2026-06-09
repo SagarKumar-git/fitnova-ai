@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger("fitnova")
 
 from app.database import engine, Base, SessionLocal
 from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight, FoodRecognitionLog
@@ -228,13 +232,28 @@ origins = [
     "https://fitnova-ai-9yua.vercel.app",
     "https://fitnova-ai-txvs.vercel.app",
 ]
+# Controlled Vercel wildcard CORS: allow all *.vercel.app preview deploys for this project
+VERCEL_ORIGIN_REGEX = r"https://fitnova-ai[\w-]*\.vercel\.app"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=VERCEL_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Global exception handler — prevents raw 500 stack traces leaking to clients
+# ---------------------------------------------------------------------------
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception on {request.method} {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected server error occurred. Please try again later."},
+    )
 
 # Route registrations
 app.include_router(auth.router, prefix="/api")

@@ -615,6 +615,7 @@ class FoodRecognitionResponse(BaseModel):
     carbohydrates: Optional[float] = None
     fat: Optional[float] = None
     confidence_score: Optional[float] = None
+    provider: Optional[str] = None
     created_at: datetime
     food_id: Optional[uuid.UUID] = None
 

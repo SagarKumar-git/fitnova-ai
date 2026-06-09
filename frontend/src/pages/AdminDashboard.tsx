@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { API_BASE_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { 
   Shield, 
   Users, 
@@ -479,6 +480,7 @@ const NativeBarChart: React.FC<NativeBarChartProps> = ({ data, colorFrom, colorT
 // Main AdminDashboard Page Component
 // ----------------------------------------------------
 export const AdminDashboard: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -516,43 +518,55 @@ export const AdminDashboard: React.FC = () => {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
 
+  // AI Analytics states
+  const [aiAnalytics, setAiAnalytics] = useState<any>(null);
+  const [loadingAi, setLoadingAi] = useState(false);
+
   const fetchAdminData = async () => {
     setLoading(true);
     setError(null);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) {
-      setError("Authentication token is missing. Please log in.");
-      setLoading(false);
-      return;
-    }
-
     try {
       // Fetch platform stats
-      const statsResponse = await fetch(`${API_BASE_URL}/admin/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const statsResponse = await apiFetch(`${API_BASE_URL}/admin/stats`);
+      if (statsResponse.status === 401 || statsResponse.status === 403) {
+        setError("Access forbidden. Administrative privileges required.");
+        setLoading(false);
+        return;
+      }
       if (!statsResponse.ok) {
-        if (statsResponse.status === 403) {
-          throw new Error("Access forbidden. Administrative privileges required.");
-        }
         throw new Error("Failed to load platform statistics.");
       }
       const statsData = await statsResponse.json();
 
       // Fetch user directory
-      const usersResponse = await fetch(`${API_BASE_URL}/admin/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const usersResponse = await apiFetch(`${API_BASE_URL}/admin/users`);
+      if (usersResponse.status === 401 || usersResponse.status === 403) {
+        setError("Access forbidden. Administrative privileges required.");
+        setLoading(false);
+        return;
+      }
       if (!usersResponse.ok) throw new Error("Failed to load user directory.");
       const usersData = await usersResponse.json();
 
       // Fetch leaderboards
-      const lbResponse = await fetch(`${API_BASE_URL}/admin/leaderboards`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const lbResponse = await apiFetch(`${API_BASE_URL}/admin/leaderboards`);
       if (lbResponse.ok) {
         const lbData = await lbResponse.json();
         setLeaderboards(lbData);
+      }
+
+      // Fetch Gemini AI analytics
+      try {
+        setLoadingAi(true);
+        const aiResponse = await apiFetch(`${API_BASE_URL}/admin/ai-analytics`);
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+          setAiAnalytics(aiData);
+        }
+      } catch (err) {
+        console.error("Failed to load AI usage analytics", err);
+      } finally {
+        setLoadingAi(false);
       }
 
       setStats(statsData);
@@ -566,16 +580,16 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchAnalytics = async (range: string, start?: string, end?: string) => {
     setLoadingAnalytics(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     try {
       let url = `${API_BASE_URL}/admin/analytics?range_type=${range}`;
       if (range === 'custom' && start && end) {
         url += `&start_date=${start}&end_date=${end}`;
       }
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(url);
+      if (res.status === 401 || res.status === 403) {
+        setLoadingAnalytics(false);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setAnalyticsData(data);
@@ -589,16 +603,16 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchFoodScanAnalytics = async (range: string, start?: string, end?: string) => {
     setLoadingFoodScans(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     try {
       let url = `${API_BASE_URL}/admin/analytics/food-scans?range_type=${range}`;
       if (range === 'custom' && start && end) {
         url += `&start_date=${start}&end_date=${end}`;
       }
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(url);
+      if (res.status === 401 || res.status === 403) {
+        setLoadingFoodScans(false);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setFoodScanAnalytics(data);
@@ -739,17 +753,18 @@ export const AdminDashboard: React.FC = () => {
 
   const handleRoleUpdate = async (userId: string, newRole: string) => {
     setUpdatingRole(userId);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/role`, {
+      const response = await apiFetch(`${API_BASE_URL}/admin/users/${userId}/role`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ role: newRole })
       });
+      if (response.status === 401 || response.status === 403) {
+        setUpdatingRole(null);
+        return;
+      }
       if (!response.ok) throw new Error("Failed to update user role.");
       
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
@@ -1165,6 +1180,172 @@ export const AdminDashboard: React.FC = () => {
           </div>
         ) : (
           <p className="text-zinc-500 text-xs text-center py-8">No Food AI data available for this range.</p>
+        )}
+      </div>
+
+      {/* Gemini AI Usage & Cost Analytics */}
+      <div className="glass-panel p-6 rounded-2xl border border-zinc-850 mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-zinc-900 pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-neonLime" />
+              Gemini AI Engine Analytics & Cost Controls
+            </h2>
+            <p className="text-zinc-400 text-xs mt-0.5">
+              Monitor model prompt tokens, response tokens, calculated API costs, and user rate limits.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (!aiAnalytics) return;
+              const headers = ["Timestamp", "User", "Feature", "Model", "Success", "Cost (USD)", "Input Tokens", "Output Tokens"];
+              const rows = aiAnalytics.recent_logs.map((log: any) => [
+                log.timestamp,
+                log.user_name,
+                log.feature,
+                log.model,
+                log.success,
+                log.cost,
+                log.input_tokens || 0,
+                log.output_tokens || 0
+              ]);
+              downloadCSV("fitnova_ai_detailed_usage.csv", headers, rows);
+            }}
+            className="py-1.5 px-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export AI Transaction Log</span>
+          </button>
+        </div>
+
+        {loadingAi ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <RefreshCw className="w-8 h-8 text-neonLime animate-spin" />
+            <span className="text-xs text-zinc-500">Compiling Gemini AI transaction metrics...</span>
+          </div>
+        ) : aiAnalytics ? (
+          <div className="space-y-6">
+            {/* Analytics Summary Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Total Requests</span>
+                <span className="text-xl font-black text-slate-100 mt-1 block">{aiAnalytics.total_requests || 0}</span>
+                <span className="text-[9px] text-zinc-500 mt-0.5 block">
+                  W: {aiAnalytics.total_workouts || 0} | M: {aiAnalytics.total_meals || 0} | I: {aiAnalytics.total_insights || 0}
+                </span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">API Success Rate</span>
+                <span className="text-xl font-black text-neonLime mt-1 block">
+                  {aiAnalytics.success_rate !== undefined ? `${aiAnalytics.success_rate}%` : "100.0%"}
+                </span>
+                <span className="text-[9px] text-zinc-500 mt-0.5 block">Zero key errors</span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Cumulative Cost (USD)</span>
+                <span className="text-xl font-black text-emerald-400 mt-1 block">
+                  ${aiAnalytics.total_cost_usd !== undefined ? aiAnalytics.total_cost_usd.toFixed(4) : "0.0000"}
+                </span>
+                <span className="text-[9px] text-zinc-500 mt-0.5 block">Gemini 2.5 Flash pricing</span>
+              </div>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Tokens Consumed</span>
+                <span className="text-xl font-black text-neonCyan mt-1 block">
+                  {((aiAnalytics.total_input_tokens || 0) + (aiAnalytics.total_output_tokens || 0)).toLocaleString()}
+                </span>
+                <span className="text-[9px] text-zinc-500 mt-0.5 block">
+                  In: {aiAnalytics.total_input_tokens?.toLocaleString() || 0} | Out: {aiAnalytics.total_output_tokens?.toLocaleString() || 0}
+                </span>
+              </div>
+            </div>
+
+            {/* Split layout for lists */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              {/* Left Column: Recent AI Transactions */}
+              <div className="xl:col-span-2 bg-zinc-950/65 p-5 rounded-xl border border-zinc-900 flex flex-col">
+                <h3 className="text-xs font-bold text-zinc-400 mb-3 tracking-wider uppercase">Recent AI Transactions</h3>
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full text-left border-collapse text-[10px]">
+                    <thead>
+                      <tr className="border-b border-zinc-850 text-[9px] text-zinc-500 font-extrabold uppercase tracking-wider">
+                        <th className="py-2 pr-2">Timestamp</th>
+                        <th className="py-2 px-2">User</th>
+                        <th className="py-2 px-2 text-center">Feature</th>
+                        <th className="py-2 px-2 text-center">Status</th>
+                        <th className="py-2 px-2 text-right">Cost (USD)</th>
+                        <th className="py-2 pl-2">Model</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900/60">
+                      {aiAnalytics.recent_logs && aiAnalytics.recent_logs.length > 0 ? (
+                        aiAnalytics.recent_logs.slice(0, 10).map((log: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-zinc-900/10">
+                            <td className="py-2.5 pr-2 font-medium text-zinc-500 whitespace-nowrap">
+                              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </td>
+                            <td className="py-2.5 px-2 font-bold text-slate-200 truncate max-w-[100px]">{log.user_name}</td>
+                            <td className="py-2.5 px-2 text-center">
+                              <span className={`inline-block text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                log.feature === 'workout' 
+                                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20' 
+                                  : log.feature === 'meal'
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-purple-500/15 text-purple-400 border border-purple-500/20'
+                              }`}>
+                                {log.feature}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              <span className={`inline-block text-[8px] font-extrabold uppercase px-1 py-0.25 rounded ${
+                                log.success 
+                                  ? 'bg-neonLime/10 text-neonLime' 
+                                  : 'bg-red-500/15 text-red-400 border border-red-500/20'
+                              }`}>
+                                {log.success ? 'Success' : 'Fallback'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-right text-emerald-400 font-bold font-mono">
+                              ${log.cost ? log.cost.toFixed(6) : "0.000000"}
+                            </td>
+                            <td className="py-2.5 pl-2 text-zinc-500 truncate max-w-[120px]">{log.model}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-zinc-550 text-xs">No AI transactions recorded yet.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right Column: Top AI Consumers */}
+              <div className="bg-zinc-950/65 p-5 rounded-xl border border-zinc-900 flex flex-col">
+                <h3 className="text-xs font-bold text-zinc-400 mb-3 tracking-wider uppercase">Top AI Consumers</h3>
+                <div className="space-y-3">
+                  {aiAnalytics.users && aiAnalytics.users.length > 0 ? (
+                    aiAnalytics.users.slice(0, 5).map((u: any) => (
+                      <div key={u.user_id} className="p-2 bg-zinc-900/40 border border-zinc-900 rounded-lg flex items-center justify-between text-[10px]">
+                        <div className="truncate max-w-[150px]">
+                          <span className="font-bold text-slate-200 block truncate">{u.name}</span>
+                          <span className="text-[8px] text-zinc-500 truncate block mt-0.5">ID: {u.user_id.substring(0,8)}</span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-extrabold text-neonCyan block">{u.count} Plans</span>
+                          <span className="text-[8px] text-emerald-400 font-bold font-mono">${u.cost ? u.cost.toFixed(4) : "0.00"}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-zinc-550 text-xs text-center py-6">No user summaries compiled yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-zinc-500 text-xs text-center py-8">No AI analytics data available.</p>
         )}
       </div>
 

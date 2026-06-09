@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -41,6 +42,7 @@ interface WaterLog {
 }
 
 export const Nutrition: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toLocaleDateString('sv'));
   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   const [waterLogs, setWaterLogs] = useState<WaterLog[]>([]);
@@ -79,33 +81,24 @@ export const Nutrition: React.FC = () => {
 
   const fetchLogs = async () => {
     setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      // 1. Fetch Food logs
-      const foodResponse = await fetch(`${API_BASE_URL}/logs/nutrition?logged_date=${selectedDate}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const [foodResponse, waterResponse] = await Promise.all([
+        apiFetch(`${API_BASE_URL}/logs/nutrition?logged_date=${selectedDate}`),
+        apiFetch(`${API_BASE_URL}/logs/water?logged_date=${selectedDate}`),
+      ]);
+
+      if (foodResponse.status === 401 || foodResponse.status === 403) return;
+
       if (foodResponse.ok) {
         const logs = await foodResponse.json();
-        const response = { data: logs };
-        const nutritionLogs = logs;
-        console.log("Nutrition API Response", response.data);
-        console.log("Nutrition State", nutritionLogs);
         setFoodLogs(logs);
       }
-
-      // 2. Fetch Water logs
-      const waterResponse = await fetch(`${API_BASE_URL}/logs/water?logged_date=${selectedDate}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
       if (waterResponse.ok) {
         const logs = await waterResponse.json();
         setWaterLogs(logs);
       }
     } catch (err) {
-      console.error("Error loading logs:", err);
+      if (import.meta.env.DEV) console.error("Error loading logs:", err);
     } finally {
       setLoading(false);
     }
@@ -115,7 +108,6 @@ export const Nutrition: React.FC = () => {
     fetchLogs();
   }, [selectedDate]);
 
-  // Handle food search
   useEffect(() => {
     const delayDebounce = setTimeout(async () => {
       if (searchQuery.trim().length === 0) {
@@ -123,36 +115,27 @@ export const Nutrition: React.FC = () => {
         return;
       }
 
-      const token = localStorage.getItem('fitnova_token');
       try {
-       const response = await fetch(`${API_BASE_URL}/foods?query=${searchQuery}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await apiFetch(`${API_BASE_URL}/foods?query=${searchQuery}`);
+        if (response.status === 401 || response.status === 403) return;
         if (response.ok) {
           const results = await response.json();
           setSearchResults(results);
         }
       } catch (err) {
-        console.error("Food search error:", err);
+        if (import.meta.env.DEV) console.error("Food search error:", err);
       }
-    }, 300); // Debounce queries
+    }, 300);
 
     return () => clearTimeout(delayDebounce);
   }, [searchQuery]);
 
-  // Log food submission
   const handleLogFood = async (foodId: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     setModalError(null);
-
     try {
-      const response = await fetch(`${API_BASE_URL}/logs/nutrition`, {
+      const response = await apiFetch(`${API_BASE_URL}/logs/nutrition`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           food_id: foodId,
           meal_type: activeMealSection,
@@ -161,12 +144,12 @@ export const Nutrition: React.FC = () => {
         })
       });
 
+      if (response.status === 401 || response.status === 403) return;
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.detail || "Failed to log food");
       }
 
-      // Success
       setShowAddModal(false);
       setSelectedFood(null);
       setSearchQuery('');
@@ -178,11 +161,8 @@ export const Nutrition: React.FC = () => {
     }
   };
 
-  // Custom food creator submission
   const handleCreateCustomFood = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
     setModalError(null);
 
     if (!customName || customServingSize <= 0) {
@@ -191,46 +171,29 @@ export const Nutrition: React.FC = () => {
     }
 
     try {
-      // 1. Create custom food
-      const createResponse = await fetch(`${API_BASE_URL}/foods`, {
+      const createResponse = await apiFetch(`${API_BASE_URL}/foods`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: customName,
-          brand: customBrand || null,
-          barcode: customBarcode || null,
-          serving_size: customServingSize,
-          serving_unit: customServingUnit,
-          calories: customCalories,
-          protein: customProtein,
-          carbohydrates: customCarbs,
-          fat: customFat
+          name: customName, brand: customBrand || null, barcode: customBarcode || null,
+          serving_size: customServingSize, serving_unit: customServingUnit,
+          calories: customCalories, protein: customProtein,
+          carbohydrates: customCarbs, fat: customFat
         })
       });
 
+      if (createResponse.status === 401 || createResponse.status === 403) return;
       if (!createResponse.ok) {
         const err = await createResponse.json();
         throw new Error(err.detail || "Failed to create food");
       }
 
       const createdFood = await createResponse.json();
-      
-      // 2. Log this newly created food
       await handleLogFood(createdFood.food_id);
-      
-      // Reset form
-      setCustomName('');
-      setCustomBrand('');
-      setCustomBarcode('');
-      setCustomServingSize(100);
-      setCustomServingUnit('g');
-      setCustomCalories(0);
-      setCustomProtein(0);
-      setCustomCarbs(0);
-      setCustomFat(0);
+
+      setCustomName(''); setCustomBrand(''); setCustomBarcode('');
+      setCustomServingSize(100); setCustomServingUnit('g');
+      setCustomCalories(0); setCustomProtein(0); setCustomCarbs(0); setCustomFat(0);
       setShowCustomCreator(false);
     } catch (err: any) {
       setModalError(err.message);
@@ -238,66 +201,41 @@ export const Nutrition: React.FC = () => {
   };
 
   const handleDeleteFoodLog = async (logId: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/logs/nutrition/${logId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        fetchLogs();
-      }
+      const response = await apiFetch(`${API_BASE_URL}/logs/nutrition/${logId}`, { method: 'DELETE' });
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) fetchLogs();
     } catch (err) {
-      console.error("Failed to delete log:", err);
+      if (import.meta.env.DEV) console.error("Failed to delete log:", err);
     }
   };
 
   const handleLogWater = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem('fitnova_token');
-    if (!token || waterInput <= 0) return;
-
+    if (waterInput <= 0) return;
     setIsWaterLogging(true);
     try {
-     const response = await fetch(`${API_BASE_URL}/logs/water`, {
+      const response = await apiFetch(`${API_BASE_URL}/logs/water`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          amount_ml: waterInput,
-          logged_date: selectedDate
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount_ml: waterInput, logged_date: selectedDate })
       });
-
-      if (response.ok) {
-        setWaterInput(250);
-        fetchLogs();
-      }
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) { setWaterInput(250); fetchLogs(); }
     } catch (err) {
-      console.error("Error logging water:", err);
+      if (import.meta.env.DEV) console.error("Error logging water:", err);
     } finally {
       setIsWaterLogging(false);
     }
   };
 
   const handleDeleteWaterLog = async (waterLogId: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-     const response = await fetch(`${API_BASE_URL}/logs/water/${waterLogId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        fetchLogs();
-      }
+      const response = await apiFetch(`${API_BASE_URL}/logs/water/${waterLogId}`, { method: 'DELETE' });
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) fetchLogs();
     } catch (err) {
-      console.error("Failed to delete water log:", err);
+      if (import.meta.env.DEV) console.error("Failed to delete water log:", err);
     }
   };
 

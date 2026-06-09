@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { 
@@ -38,6 +39,7 @@ interface MealPlan {
 }
 
 export const MealPlans: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [plans, setPlans] = useState<MealPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,31 +63,21 @@ export const MealPlans: React.FC = () => {
   const mealTypes = ['Breakfast', 'Pre Workout', 'Post Workout', 'Lunch', 'Dinner', 'Snack'];
 
   const fetchPlans = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-     const response = await fetch(`${API_BASE_URL}/meal-plans`, {
-  headers: {
-    'Authorization': `Bearer ${token}`
-  }
-});
-
-if (response.ok) {
-  const data = await response.json();
-  setPlans(data);
-
-  const todayStr = new Date().toLocaleDateString('sv');
-
-  const datesMap = data.reduce((acc: any, plan: any) => {
-    acc[plan.meal_plan_id] = todayStr;
-    return acc;
-  }, {});
-
-  setApplyDates(datesMap);
-}
+      const response = await apiFetch(`${API_BASE_URL}/meal-plans`);
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) {
+        const data = await response.json();
+        setPlans(data);
+        const todayStr = new Date().toLocaleDateString('sv');
+        const datesMap = data.reduce((acc: Record<string, string>, plan: MealPlan) => {
+          acc[plan.meal_plan_id] = todayStr;
+          return acc;
+        }, {});
+        setApplyDates(datesMap);
+      }
     } catch (err) {
-      console.error("Failed to load templates:", err);
+      if (import.meta.env.DEV) console.error("Failed to load templates:", err);
     } finally {
       setLoading(false);
     }
@@ -95,30 +87,21 @@ if (response.ok) {
     fetchPlans();
   }, []);
 
-  // Search food query
   useEffect(() => {
     const searchDebounce = setTimeout(async () => {
       if (searchQuery.trim().length === 0) {
         setSearchResults([]);
         return;
       }
-      const token = localStorage.getItem('fitnova_token');
       try {
-       const response = await fetch(
-  `${API_BASE_URL}/foods?query=${searchQuery}`,
-  {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  }
-);
-
-if (response.ok) {
-  const result = await response.json();
-  setSearchResults(result);
-}
+        const response = await apiFetch(`${API_BASE_URL}/foods?query=${searchQuery}`);
+        if (response.status === 401 || response.status === 403) return;
+        if (response.ok) {
+          const result = await response.json();
+          setSearchResults(result);
+        }
       } catch (err) {
-        console.error("Search error in plans:", err);
+        if (import.meta.env.DEV) console.error("Search error in plans:", err);
       }
     }, 250);
 
@@ -163,16 +146,10 @@ if (response.ok) {
       return;
     }
 
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-     const response = await fetch(`${API_BASE_URL}/meal-plans`, {
+      const response = await apiFetch(`${API_BASE_URL}/meal-plans`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: templateName,
           items: templateItems.map(item => ({
@@ -183,6 +160,7 @@ if (response.ok) {
         })
       });
 
+      if (response.status === 401 || response.status === 403) return;
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.detail || "Failed to create template.");
@@ -199,20 +177,12 @@ if (response.ok) {
   };
 
   const handleDeleteTemplate = async (planId: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/meal-plans/${planId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        fetchPlans();
-      }
+      const response = await apiFetch(`${API_BASE_URL}/meal-plans/${planId}`, { method: 'DELETE' });
+      if (response.status === 401 || response.status === 403) return;
+      if (response.ok) fetchPlans();
     } catch (err) {
-      console.error("Delete template failed:", err);
+      if (import.meta.env.DEV) console.error("Delete template failed:", err);
     }
   };
 
@@ -222,23 +192,13 @@ if (response.ok) {
     const targetDate = applyDates[planId];
     if (!targetDate) return;
 
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(
-  `${API_BASE_URL}/meal-plans/${planId}/apply?logged_date=${targetDate}`,
-  {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  }
-);
-      if (!response.ok) {
-        throw new Error("Failed to clone templates.");
-      }
-
+      const response = await apiFetch(
+        `${API_BASE_URL}/meal-plans/${planId}/apply?logged_date=${targetDate}`,
+        { method: 'POST' }
+      );
+      if (response.status === 401 || response.status === 403) return;
+      if (!response.ok) throw new Error("Failed to clone templates.");
       setSuccess(`Meal plan applied successfully to ${targetDate}!`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {

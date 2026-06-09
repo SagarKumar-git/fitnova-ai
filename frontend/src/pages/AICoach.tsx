@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { API_BASE_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { 
   Sparkles, 
   Activity, 
@@ -57,6 +58,7 @@ interface AIMeal {
 }
 
 export const AICoach: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'workout' | 'meal'>('profile');
   const [profile, setProfile] = useState<AIProfile | null>(null);
   const [workoutPlan, setWorkoutPlan] = useState<AIWorkout | null>(null);
@@ -79,11 +81,12 @@ export const AICoach: React.FC = () => {
   const fetchProfileAnalysis = async () => {
     setLoadingProfile(true);
     setErrorProfile(null);
-    const token = localStorage.getItem('fitnova_token');
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/profile`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/ai/profile`);
+      if (response.status === 401 || response.status === 403) {
+        setLoadingProfile(false);
+        return;
+      }
       if (response.status === 404) {
         throw new Error("Profile not completed. Please complete your baselines setup in the Profile tab first.");
       }
@@ -101,11 +104,9 @@ export const AICoach: React.FC = () => {
 
   const fetchWorkoutPlan = async () => {
     setErrorWorkout(null);
-    const token = localStorage.getItem('fitnova_token');
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/workout`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/ai/workout`);
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         const data = await response.json();
         setWorkoutPlan(data);
@@ -115,17 +116,15 @@ export const AICoach: React.FC = () => {
         setWorkoutPlan(null);
       }
     } catch (err) {
-      console.error("No active workout plan found.");
+      if (import.meta.env.DEV) console.error("No active workout plan found.");
     }
   };
 
   const fetchMealPlan = async () => {
     setErrorMeal(null);
-    const token = localStorage.getItem('fitnova_token');
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/meal`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/ai/meal`);
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         const data = await response.json();
         setMealPlan(data);
@@ -135,29 +134,25 @@ export const AICoach: React.FC = () => {
         setMealPlan(null);
       }
     } catch (err) {
-      console.error("No active meal plan found.");
+      if (import.meta.env.DEV) console.error("No active meal plan found.");
     }
   };
 
   useEffect(() => {
-    fetchProfileAnalysis();
-    fetchWorkoutPlan();
-    fetchMealPlan();
+    // Fetch all three in parallel for performance
+    Promise.all([fetchProfileAnalysis(), fetchWorkoutPlan(), fetchMealPlan()]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGenerateWorkout = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingWorkout(true);
     setErrorWorkout(null);
-    const token = localStorage.getItem('fitnova_token');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/workout`, {
+      const response = await apiFetch(`${API_BASE_URL}/ai/workout`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workout_type: workoutType,
           goal: profile?.goal || "Maintenance",
@@ -165,6 +160,8 @@ export const AICoach: React.FC = () => {
           days_per_week: workoutDays
         })
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -183,13 +180,12 @@ export const AICoach: React.FC = () => {
   const handleDeleteWorkout = async () => {
     if (!workoutPlan) return;
     setLoadingWorkout(true);
-    const token = localStorage.getItem('fitnova_token');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/workout/${workoutPlan.id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/ai/workout/${workoutPlan.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         setWorkoutPlan(null);
       } else {
@@ -206,20 +202,18 @@ export const AICoach: React.FC = () => {
     e.preventDefault();
     setLoadingMeal(true);
     setErrorMeal(null);
-    const token = localStorage.getItem('fitnova_token');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/meal`, {
+      const response = await apiFetch(`${API_BASE_URL}/ai/meal`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           diet_type: dietType,
           diet_cuisine: dietCuisine
         })
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -238,13 +232,12 @@ export const AICoach: React.FC = () => {
   const handleDeleteMeal = async () => {
     if (!mealPlan) return;
     setLoadingMeal(true);
-    const token = localStorage.getItem('fitnova_token');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/meal/${mealPlan.id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/ai/meal/${mealPlan.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401 || response.status === 403) return;
       if (response.ok) {
         setMealPlan(null);
       } else {

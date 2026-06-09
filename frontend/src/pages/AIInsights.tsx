@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { API_BASE_URL } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { 
   Lightbulb, 
   Droplet, 
@@ -29,6 +30,7 @@ interface AIInsight {
 }
 
 export const AIInsights: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,17 +38,13 @@ export const AIInsights: React.FC = () => {
   const fetchInsights = async () => {
     setLoading(true);
     setError(null);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) {
-      setError("Authentication token missing. Please log in.");
-      setLoading(false);
-      return;
-    }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ai/insights`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/ai/insights`);
+      if (response.status === 401 || response.status === 403) {
+        setLoading(false);
+        return;
+      }
       if (!response.ok) {
         throw new Error("Failed to compile AI insights recommendation engine.");
       }

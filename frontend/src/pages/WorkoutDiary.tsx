@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
@@ -43,6 +44,7 @@ interface RoutineTemplate {
 
 export const WorkoutDiary: React.FC = () => {
   const navigate = useNavigate();
+  const { apiFetch } = useAuth();
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [templates, setTemplates] = useState<RoutineTemplate[]>([]);
   const [exercisesList, setExercisesList] = useState<ExerciseBrief[]>([]);
@@ -64,42 +66,25 @@ export const WorkoutDiary: React.FC = () => {
 
   const fetchActiveSessionAndTemplates = async () => {
     setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      // 1. Fetch active session
-      const activeRes = await fetch(`${API_BASE_URL}/workouts/sessions/active`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const activeData = await activeRes.json();
-      
-      // 2. Fetch routines templates
-      const templatesRes = await fetch(`${API_BASE_URL}/workouts/templates`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (templatesRes.ok) {
-        const templatesData = await templatesRes.json();
-        setTemplates(templatesData);
-      }
+      const [activeRes, templatesRes, exercisesRes] = await Promise.all([
+        apiFetch(`${API_BASE_URL}/workouts/sessions/active`),
+        apiFetch(`${API_BASE_URL}/workouts/templates`),
+        apiFetch(`${API_BASE_URL}/exercises`),
+      ]);
 
-      // 3. Fetch exercises database
-      const exercisesRes = await fetch(`${API_BASE_URL}/exercises`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (exercisesRes.ok) {
-        const exercisesData = await exercisesRes.json();
-        setExercisesList(exercisesData);
-      }
+      if (activeRes.status === 401 || activeRes.status === 403) return;
+
+      const activeData = activeRes.ok ? await activeRes.json() : null;
+
+      if (templatesRes.ok) setTemplates(await templatesRes.json());
+      if (exercisesRes.ok) setExercisesList(await exercisesRes.json());
 
       if (activeData) {
         setActiveSession(activeData);
-        // Reconstruct local exercises lists from logged sets
         const groupedSets: Record<string, WorkoutSet[]> = {};
         activeData.sets.forEach((set: any) => {
-          if (!groupedSets[set.exercise_id]) {
-            groupedSets[set.exercise_id] = [];
-          }
+          if (!groupedSets[set.exercise_id]) groupedSets[set.exercise_id] = [];
           groupedSets[set.exercise_id].push({
             id: set.id,
             exercise_id: set.exercise_id,
@@ -120,14 +105,10 @@ export const WorkoutDiary: React.FC = () => {
             category: "Strength",
             equipment: ""
           };
-          return {
-            exercise: exInfo,
-            sets: groupedSets[exId]
-          };
+          return { exercise: exInfo, sets: groupedSets[exId] };
         });
         setSessionExercises(reconstructed);
 
-        // Start session elapsed timer
         const startMs = new Date(activeData.started_at).getTime();
         const diffSecs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
         setElapsedSeconds(diffSecs);
@@ -135,7 +116,7 @@ export const WorkoutDiary: React.FC = () => {
         setActiveSession(null);
       }
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     } finally {
       setLoading(false);
     }
@@ -190,21 +171,14 @@ export const WorkoutDiary: React.FC = () => {
   }, [restRemaining]);
 
   const handleStartWorkout = async (name: string, templateId?: string) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/workouts/sessions/start`, {
+      const response = await apiFetch(`${API_BASE_URL}/workouts/sessions/start`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: name,
-          template_id: templateId || null
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, template_id: templateId || null })
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
         const sessionData = await response.json();
@@ -213,7 +187,6 @@ export const WorkoutDiary: React.FC = () => {
         setSessionNotes('');
         setElapsedSeconds(0);
 
-        // Prepopulate sets if template was selected
         if (templateId) {
           const selectedTemplate = templates.find(t => t.id === templateId);
           if (selectedTemplate) {
@@ -240,7 +213,7 @@ export const WorkoutDiary: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     }
   };
 
@@ -304,20 +277,14 @@ export const WorkoutDiary: React.FC = () => {
   };
 
   const handleLogSet = async (exId: string, setIndex: number) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     const se = sessionExercises.find(s => s.exercise.id === exId);
     if (!se) return;
     const targetSet = se.sets[setIndex];
 
     try {
-      const response = await fetch(`${API_BASE_URL}/workouts/sessions/log-set`, {
+      const response = await apiFetch(`${API_BASE_URL}/workouts/sessions/log-set`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           exercise_id: exId,
           set_number: targetSet.set_number,
@@ -328,21 +295,17 @@ export const WorkoutDiary: React.FC = () => {
         })
       });
 
+      if (response.status === 401 || response.status === 403) return;
+
       if (response.ok) {
         const savedSet = await response.json();
-        handleUpdateLocalSet(exId, setIndex, {
-          id: savedSet.id,
-          is_logged: true,
-          is_pr: savedSet.is_pr
-        });
-
-        // Trigger rest timer
+        handleUpdateLocalSet(exId, setIndex, { id: savedSet.id, is_logged: true, is_pr: savedSet.is_pr });
         if (targetSet.rest_seconds && targetSet.rest_seconds > 0) {
           setRestRemaining(targetSet.rest_seconds);
         }
       }
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     }
   };
 
@@ -352,49 +315,33 @@ export const WorkoutDiary: React.FC = () => {
     const targetSet = se.sets[setIndex];
 
     if (targetSet.is_logged && targetSet.id) {
-      const token = localStorage.getItem('fitnova_token');
-      if (!token) return;
-
       try {
-        await fetch(`${API_BASE_URL}/workouts/sessions/delete-set/${targetSet.id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        await apiFetch(`${API_BASE_URL}/workouts/sessions/delete-set/${targetSet.id}`, { method: 'DELETE' });
       } catch (err) {
-        console.error(err);
+        if (import.meta.env.DEV) console.error(err);
       }
     }
 
-    setSessionExercises(prev => {
-      return prev.map(item => {
+    setSessionExercises(prev =>
+      prev.map(item => {
         if (item.exercise.id !== exId) return item;
-        const filteredSets = item.sets.filter((_, idx) => idx !== setIndex).map((s, idx) => ({
-          ...s,
-          set_number: idx + 1
-        }));
-        return {
-          ...item,
-          sets: filteredSets
-        };
-      }).filter(item => item.sets.length > 0);
-    });
+        const filteredSets = item.sets
+          .filter((_, idx) => idx !== setIndex)
+          .map((s, idx) => ({ ...s, set_number: idx + 1 }));
+        return { ...item, sets: filteredSets };
+      }).filter(item => item.sets.length > 0)
+    );
   };
 
   const handleFinishWorkout = async () => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     try {
-      const response = await fetch(`${API_BASE_URL}/workouts/sessions/finish`, {
+      const response = await apiFetch(`${API_BASE_URL}/workouts/sessions/finish`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          notes: sessionNotes || null
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: sessionNotes || null })
       });
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
         setActiveSession(null);
@@ -403,7 +350,7 @@ export const WorkoutDiary: React.FC = () => {
         navigate('/workout-analytics');
       }
     } catch (err) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
     }
   };
 

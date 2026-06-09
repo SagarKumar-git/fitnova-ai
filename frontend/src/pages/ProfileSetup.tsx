@@ -20,7 +20,7 @@ import { API_BASE_URL } from '../config';
 
 
 export const ProfileSetup: React.FC = () => {
-  const { user, profile, updateProfile, fetchProfile } = useAuth();
+  const { user, profile, updateProfile, fetchProfile, apiFetch } = useAuth();
   const navigate = useNavigate();
 
   // Load profile on mount
@@ -53,11 +53,12 @@ export const ProfileSetup: React.FC = () => {
     if (!profile) return;
     setLoadingAchievements(true);
     setErrorAchievements(null);
-    const token = localStorage.getItem('fitnova_token');
     try {
-      const response = await fetch(`${API_BASE_URL}/achievements`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiFetch(`${API_BASE_URL}/achievements`);
+      if (response.status === 401 || response.status === 403) {
+        setLoadingAchievements(false);
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         setAchievements(data);

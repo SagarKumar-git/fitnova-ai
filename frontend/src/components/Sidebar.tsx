@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePWA } from '../hooks/usePWA';
 import { 
   LayoutDashboard, 
   User, 
@@ -14,7 +15,8 @@ import {
   X,
   Shield,
   Lightbulb,
-  Camera
+  Camera,
+  Download
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +25,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { user, logout } = useAuth();
+  const { isInstallable, installApp } = usePWA();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -46,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
               <h1 className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-slate-100 to-zinc-400 bg-clip-text text-transparent">
                 FITNOVA <span className="text-neonLime">AI</span>
               </h1>
-              <p className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">Phase 2 Active</p>
+              <p className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">v1.0 Production</p>
             </div>
           </div>
           {onClose && (
@@ -60,7 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
         </div>
 
         {/* Navigation Section */}
-        <nav className="space-y-1">
+        <nav className="space-y-1 overflow-y-auto flex-1 pr-1" aria-label="Main navigation">
           <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Core Platform</p>
           
           <NavLink 
@@ -177,6 +180,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
             <Lightbulb className="w-4 h-4" />
             <span>AI Insights</span>
           </NavLink>
+
+          {/* Install App Link */}
+          {isInstallable && (
+            <div className="px-2 pt-4">
+              <button
+                onClick={installApp}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-neonCyan hover:bg-neonCyan/10 border border-dashed border-neonCyan/30 bg-neonCyan/5 transition-all duration-200 text-left cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-neonCyan animate-bounce" />
+                <span>Install FitNova AI</span>
+              </button>
+            </div>
+          )}
         </nav>
       </div>
 

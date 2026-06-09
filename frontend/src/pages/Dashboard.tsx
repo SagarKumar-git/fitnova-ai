@@ -1,5 +1,7 @@
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { 
   Flame, 
@@ -13,7 +15,8 @@ import {
   Award,
   Zap,
   Info,
-  Plus
+  Plus,
+  ArrowRight
 } from 'lucide-react';
 
 interface DashboardData {
@@ -37,6 +40,7 @@ interface DashboardData {
 }
 
 export const Dashboard: React.FC = () => {
+  const { apiFetch } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +48,11 @@ export const Dashboard: React.FC = () => {
 
   const fetchDashboardData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/dashboard`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      const response = await apiFetch(`${API_BASE_URL}/dashboard`);
+
+      if (response.status === 401 || response.status === 403) return;
 
       if (!response.ok) {
         throw new Error('Failed to load dashboard data.');
@@ -60,6 +60,7 @@ export const Dashboard: React.FC = () => {
 
       const result = await response.json();
       setData(result);
+      setError(null);
     } catch (err: any) {
       setError(err.message || 'Error occurred.');
     } finally {
@@ -72,29 +73,25 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   const handleQuickLogWater = async (amountMl: number) => {
-    const token = localStorage.getItem('fitnova_token');
-    if (!token) return;
-
     setIsWaterLogging(true);
     try {
-      const todayStr = new Date().toLocaleDateString('sv'); // sv locale returns YYYY-MM-DD
-      const response = await fetch(`${API_BASE_URL}/logs/water`, {
+      const todayStr = new Date().toLocaleDateString('sv');
+      const response = await apiFetch(`${API_BASE_URL}/logs/water`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount_ml: amountMl,
           logged_date: todayStr
         })
       });
 
+      if (response.status === 401 || response.status === 403) return;
+
       if (response.ok) {
         await fetchDashboardData(false);
       }
     } catch (err) {
-      console.error("Failed to log water:", err);
+      if (import.meta.env.DEV) console.error("Failed to log water:", err);
     } finally {
       setIsWaterLogging(false);
     }
@@ -119,9 +116,17 @@ export const Dashboard: React.FC = () => {
         <div className="p-6 bg-red-950/40 border border-red-800/40 rounded-2xl max-w-xl mx-auto mt-10">
           <h2 className="font-bold text-red-300 text-lg mb-2">Error Loading Dashboard</h2>
           <p className="text-red-200 text-sm mb-4">{error || "Please set up your profile to access dashboard calculations."}</p>
-          <a href="/profile-setup" className="inline-block py-2.5 px-5 bg-zinc-900 border border-zinc-800 text-slate-100 font-bold rounded-xl text-xs uppercase tracking-wide">
-            Go to Profile Setup
-          </a>
+          <div className="flex gap-3">
+            <button
+              onClick={() => fetchDashboardData(true)}
+              className="inline-flex items-center gap-2 py-2.5 px-5 bg-zinc-900 border border-zinc-800 text-slate-100 font-bold rounded-xl text-xs uppercase tracking-wide hover:border-neonLime/50 transition-all"
+            >
+              Retry
+            </button>
+            <a href="/profile-setup" className="inline-block py-2.5 px-5 bg-zinc-900 border border-zinc-800 text-slate-100 font-bold rounded-xl text-xs uppercase tracking-wide">
+              Go to Profile Setup
+            </a>
+          </div>
         </div>
       </Layout>
     );
@@ -359,51 +364,59 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Placeholder Cards Grid */}
-      <h2 className="text-xl font-bold text-white tracking-tight mb-4">Core Recommendations</h2>
+      {/* Live Feature Navigation Cards */}
+      <h2 className="text-xl font-bold text-white tracking-tight mb-4">Explore FitNova</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        {/* Workout Plan Placeholder */}
-        <div className="glass-panel p-6 rounded-2xl border border-zinc-800 opacity-60 hover:opacity-80 transition-all duration-300 flex flex-col justify-between">
+        {/* AI Coach Card */}
+        <Link 
+          to="/ai-coach"
+          className="glass-panel p-6 rounded-2xl border border-zinc-800 hover:border-neonLime/40 hover:shadow-[0_0_20px_rgba(163,230,53,0.08)] transition-all duration-300 flex flex-col justify-between group"
+        >
           <div>
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-zinc-900 text-zinc-400 rounded-xl border border-zinc-850">
+                <div className="p-2.5 bg-neonLime/10 text-neonLime rounded-xl border border-neonLime/20">
                   <Dumbbell className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-slate-200">Custom Workout Plan</h4>
+                <h4 className="font-bold text-slate-200">AI Coach</h4>
               </div>
-              <span className="text-[9px] font-bold px-2.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 uppercase tracking-widest">Coming Soon</span>
+              <span className="text-[9px] font-bold px-2.5 py-0.5 rounded bg-neonLime/10 text-neonLime border border-neonLime/20 uppercase tracking-widest">Live</span>
             </div>
             <p className="text-sm text-zinc-400">
-              An intelligent athletic workout structure custom-tailored to your gym equipment, training days per week, and skill level.
+              Generate personalized workout and meal plans tailored to your biometric baselines, fitness goal, and training experience.
             </p>
           </div>
-          <div className="mt-6 pt-4 border-t border-zinc-900 text-xs text-neonLime">
-            FitNova AI recommendations engine locked for Phase 2.
+          <div className="mt-6 pt-4 border-t border-zinc-900 text-xs text-neonLime flex items-center gap-1.5 group-hover:gap-2.5 transition-all duration-200">
+            <span>Open AI Coach</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </div>
-        </div>
+        </Link>
 
-        {/* Nutrition Plan Placeholder */}
-        <div className="glass-panel p-6 rounded-2xl border border-zinc-800 opacity-60 hover:opacity-80 transition-all duration-300 flex flex-col justify-between">
+        {/* Meal Plans Card */}
+        <Link 
+          to="/meal-plans"
+          className="glass-panel p-6 rounded-2xl border border-zinc-800 hover:border-neonCyan/40 hover:shadow-[0_0_20px_rgba(6,182,212,0.08)] transition-all duration-300 flex flex-col justify-between group"
+        >
           <div>
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-zinc-900 text-zinc-400 rounded-xl border border-zinc-850">
+                <div className="p-2.5 bg-neonCyan/10 text-neonCyan rounded-xl border border-neonCyan/20">
                   <Apple className="w-5 h-5" />
                 </div>
-                <h4 className="font-bold text-slate-200">Personalized Nutrition Plan</h4>
+                <h4 className="font-bold text-slate-200">Meal Plans</h4>
               </div>
-              <span className="text-[9px] font-bold px-2.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 uppercase tracking-widest">Coming Soon</span>
+              <span className="text-[9px] font-bold px-2.5 py-0.5 rounded bg-neonCyan/10 text-neonCyan border border-neonCyan/20 uppercase tracking-widest">Live</span>
             </div>
             <p className="text-sm text-zinc-400">
-              Macro-divided meal splits matching your calorie targets, featuring meal prep guidelines and macronutrient timelines.
+              Browse, save, and follow curated meal plans that match your calorie targets, macro splits, and dietary preferences.
             </p>
           </div>
-          <div className="mt-6 pt-4 border-t border-zinc-900 text-xs text-neonCyan">
-            FitNova AI meal schedules locked for Phase 2.
+          <div className="mt-6 pt-4 border-t border-zinc-900 text-xs text-neonCyan flex items-center gap-1.5 group-hover:gap-2.5 transition-all duration-200">
+            <span>Open Meal Plans</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </div>
-        </div>
+        </Link>
       </div>
     </Layout>
   );
