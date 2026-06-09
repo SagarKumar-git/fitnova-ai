@@ -275,6 +275,16 @@ app.include_router(food_scan.router, prefix="/api/v1")
 
 
 
+@app.get("/api/debug/vision-provider", tags=["Debug"])
+def debug_vision_provider():
+    from app.config import settings
+    has_key = bool(settings.GEMINI_API_KEY)
+    provider_name = "gemini" if has_key else "heuristic"
+    return {
+        "provider": provider_name,
+        "gemini_key_present": has_key
+    }
+
 @app.get("/", tags=["Root"])
 def root():
     return {
