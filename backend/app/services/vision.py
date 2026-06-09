@@ -49,16 +49,36 @@ class HeuristicVisionProvider(VisionProvider):
         for key, info in self.FOOD_DATABASE.items():
             if key in search_target:
                 logger.info("AUDIT: Parser success")
-                # Return a copy to avoid mutating base database
                 res = info.copy()
                 res["provider"] = "heuristic"
+                res["meal_name"] = res.get("food_name", "Heuristic Meal")
+                res["detected_items"] = [res["meal_name"]]
+                res["confidence_per_item"] = {res["meal_name"]: res.get("confidence_score", 0.80)}
+                res["serving_size_estimation"] = "medium"
+                res["estimated_weight_g"] = 350.0
+                res["health_score"] = 6
+                res["nutrition_confidence"] = 0.80
+                res["goal_alignment"] = {"weight_loss": 6, "muscle_gain": 6, "maintenance": 7}
+                res["recommendation"] = f"Heuristic match for {res['meal_name']}."
+                res["healthier_alternative"] = "Consider a fresh home-cooked version with standard portion sizes."
+                res["annotations"] = []
                 return res
                 
         logger.info("AUDIT: Parser failure")
         logger.info("AUDIT: Fallback activated")
-        # Unknown meal fallback
         return {
             "food_name": "Unknown Meal",
+            "meal_name": "Unknown Meal",
+            "detected_items": ["Unknown Meal"],
+            "confidence_per_item": {"Unknown Meal": 0.30},
+            "serving_size_estimation": "medium",
+            "estimated_weight_g": 350.0,
+            "health_score": 5,
+            "nutrition_confidence": 0.30,
+            "goal_alignment": {"weight_loss": 5, "muscle_gain": 5, "maintenance": 5},
+            "recommendation": "Unable to determine food items. Please log manually.",
+            "healthier_alternative": "Log fresh, whole-food options where possible.",
+            "annotations": [],
             "calories": 0.0,
             "protein": 0.0,
             "carbohydrates": 0.0,
@@ -71,7 +91,6 @@ class GeminiVisionProvider(VisionProvider):
     def parse_image(self, file_path: str, filename: str) -> Dict[str, Any]:
         logger.info("Gemini request started")
         
-        # Resolve web path representation to absolute physical disk path
         base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
         relative_path = file_path.lstrip("/")
         if relative_path.startswith("static/"):
@@ -99,17 +118,37 @@ class GeminiVisionProvider(VisionProvider):
             mime_type = "image/jpeg"
             
         prompt = (
-            "Analyze the contents of this image. Identify the food item pictured and estimate its nutritional values. "
-            "Return STRICT JSON only, with no markdown code blocks, and no extra text. "
+            "Analyze the contents of this image. Identify the food item(s) pictured, estimate their nutritional values, "
+            "and provide granular health, portion, and bounding box estimates.\n"
+            "Return STRICT JSON only, with no markdown code blocks, and no extra text.\n"
             "The JSON must follow this schema exactly:\n"
             "{\n"
-            "  \"food_name\": \"Name of the food\",\n"
-            "  \"confidence_score\": 0.0 to 1.0 (float),\n"
-            "  \"calories\": integer,\n"
+            "  \"meal_name\": \"Name of the overall meal (e.g. Chicken & Fries with Eggs)\",\n"
+            "  \"detected_items\": [\"List of individual foods detected on the plate\"],\n"
+            "  \"confidence_per_item\": {\"Item name from detected_items\": float between 0.0 and 1.0 (confidence of detection)},\n"
+            "  \"serving_size_estimation\": \"small\" | \"medium\" | \"large\",\n"
+            "  \"estimated_weight_g\": integer (estimated weight of the plate in grams),\n"
+            "  \"health_score\": integer between 1 and 10,\n"
+            "  \"nutrition_confidence\": float between 0.0 and 1.0 (confidence of nutritional estimate accuracy),\n"
+            "  \"goal_alignment\": {\n"
+            "    \"weight_loss\": integer between 1 and 10,\n"
+            "    \"muscle_gain\": integer between 1 and 10,\n"
+            "    \"maintenance\": integer between 1 and 10\n"
+            "  },\n"
+            "  \"recommendation\": \"A short smart health recommendation matching their nutrition profile\",\n"
+            "  \"healthier_alternative\": \"A healthier alternative version of this meal\",\n"
+            "  \"calories\": integer (estimated total calories),\n"
             "  \"protein\": integer (grams),\n"
             "  \"carbohydrates\": integer (grams),\n"
             "  \"fat\": integer (grams),\n"
-            "  \"estimated_serving_size_g\": integer (grams)\n"
+            "  \"confidence_score\": float between 0.0 and 1.0 (overall confidence of the analysis),\n"
+            "  \"annotations\": [\n"
+            "    {\n"
+            "      \"name\": \"Name of the item\",\n"
+            "      \"confidence\": float between 0.0 and 1.0,\n"
+            "      \"bounding_box\": [ymin, xmin, ymax, xmax] (integers between 0 and 1000 representing box coordinates where 0,0 is top-left and 1000,1000 is bottom-right)\n"
+            "    }\n"
+            "  ]\n"
             "}"
         )
         
@@ -141,10 +180,29 @@ class GeminiVisionProvider(VisionProvider):
             data = json.loads(clean_text)
             
             # Validation Layer
-            if "food_name" not in data or not data["food_name"]:
-                raise ValueError("food_name is missing or empty")
-            if "confidence_score" not in data:
-                raise ValueError("confidence_score is missing")
+            if "meal_name" not in data or not data["meal_name"]:
+                data["meal_name"] = data.get("food_name", "Scanned Meal")
+            if "detected_items" not in data or not isinstance(data["detected_items"], list):
+                data["detected_items"] = [data["meal_name"]]
+            if "confidence_per_item" not in data or not isinstance(data["confidence_per_item"], dict):
+                data["confidence_per_item"] = {item: data.get("confidence_score", 0.90) for item in data["detected_items"]}
+            if "serving_size_estimation" not in data or data["serving_size_estimation"] not in ["small", "medium", "large"]:
+                data["serving_size_estimation"] = "medium"
+            if "estimated_weight_g" not in data:
+                data["estimated_weight_g"] = 350
+            if "health_score" not in data or not (1 <= int(data["health_score"]) <= 10):
+                data["health_score"] = 6
+            if "nutrition_confidence" not in data:
+                data["nutrition_confidence"] = data.get("confidence_score", 0.85)
+            if "goal_alignment" not in data or not isinstance(data["goal_alignment"], dict):
+                data["goal_alignment"] = {"weight_loss": 5, "muscle_gain": 5, "maintenance": 5}
+            if "recommendation" not in data:
+                data["recommendation"] = "Balanced portion sizes observed."
+            if "healthier_alternative" not in data:
+                data["healthier_alternative"] = "Incorporate more fiber-rich greens."
+            if "annotations" not in data or not isinstance(data["annotations"], list):
+                data["annotations"] = []
+                
             if "calories" not in data or float(data["calories"]) < 0:
                 raise ValueError("calories missing or negative")
             if "protein" not in data or float(data["protein"]) < 0:
@@ -153,9 +211,22 @@ class GeminiVisionProvider(VisionProvider):
                 raise ValueError("carbohydrates missing or negative")
             if "fat" not in data or float(data["fat"]) < 0:
                 raise ValueError("fat missing or negative")
+            if "confidence_score" not in data:
+                data["confidence_score"] = data.get("nutrition_confidence", 0.85)
                 
             normalized_data = {
-                "food_name": str(data["food_name"]),
+                "food_name": str(data["meal_name"]), # compatibility fallback
+                "meal_name": str(data["meal_name"]),
+                "detected_items": [str(x) for x in data["detected_items"]],
+                "confidence_per_item": {str(k): float(v) for k, v in data["confidence_per_item"].items()},
+                "serving_size_estimation": str(data["serving_size_estimation"]),
+                "estimated_weight_g": float(data["estimated_weight_g"]),
+                "health_score": int(data["health_score"]),
+                "nutrition_confidence": float(data["nutrition_confidence"]),
+                "goal_alignment": {str(k): int(v) for k, v in data["goal_alignment"].items()},
+                "recommendation": str(data["recommendation"]),
+                "healthier_alternative": str(data["healthier_alternative"]),
+                "annotations": data["annotations"],
                 "confidence_score": float(data["confidence_score"]),
                 "calories": float(data["calories"]),
                 "protein": float(data["protein"]),
@@ -173,7 +244,6 @@ class GeminiVisionProvider(VisionProvider):
             logger.info("Fallback provider activated")
             return HeuristicVisionProvider().parse_image(file_path, filename)
 
-
 def calculate_sha256(file_bytes: bytes) -> str:
     """Calculates SHA256 hash of image bytes."""
     return hashlib.sha256(file_bytes).hexdigest()
@@ -186,34 +256,29 @@ def compress_image_if_large(file_bytes: bytes, max_allowed_mb: float = 5.0) -> T
     if not file_bytes:
         raise ValueError("Upload cannot be empty")
 
-    # Open PIL image to validate it is a valid format
     try:
         img = Image.open(BytesIO(file_bytes))
-        img.verify() # Verify image integrity
+        img.verify()
     except (UnidentifiedImageError, SyntaxError) as e:
         raise UnidentifiedImageError("Corrupted or unsupported image file") from e
     except Exception as e:
         raise OSError("Error parsing image file") from e
 
-    # Re-open for actual processing (since verify() renders image unusable for further operations)
     img = Image.open(BytesIO(file_bytes))
     
     file_size_mb = len(file_bytes) / (1024 * 1024)
     if file_size_mb <= max_allowed_mb:
         return file_bytes, False
 
-    # Compress the image
     out_io = BytesIO()
-    # Save with reduced quality
     img_format = img.format if img.format in ["JPEG", "PNG", "WEBP"] else "JPEG"
     if img.mode in ["RGBA", "LA"] and img_format in ["JPEG"]:
-        img = img.convert("RGB") # Remove alpha channel for JPEG saving
+        img = img.convert("RGB")
         
     try:
         img.save(out_io, format=img_format, quality=70, optimize=True)
         compressed_bytes = out_io.getvalue()
         
-        # If still larger than 5MB, keep compressing aggressively
         if len(compressed_bytes) / (1024 * 1024) > max_allowed_mb:
             out_io = BytesIO()
             img.save(out_io, format=img_format, quality=40, optimize=True)
@@ -242,7 +307,6 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         # Run recognition provider
         result = provider.parse_image(file_path, filename)
         
-        # Determine food_id: reuse existing food if a similar name exists
         food_name = result["food_name"]
         
         existing_food = db.query(Food).filter(
@@ -254,7 +318,6 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         if existing_food:
             food_id = existing_food.food_id
         else:
-            # If not found and it's not Unknown Meal, we can create a custom food item
             if food_name != "Unknown Meal":
                 new_food = Food(
                     name=food_name,
@@ -268,7 +331,7 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
                     created_by=log.user_id
                 )
                 db.add(new_food)
-                db.flush() # Populate new_food.food_id
+                db.flush()
                 food_id = new_food.food_id
 
         # Update log details
@@ -280,12 +343,25 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         log.confidence_score = result["confidence_score"]
         log.provider = result.get("provider", "heuristic")
         log.food_id = food_id
+        
+        # Phase F-3.5 fields
+        log.meal_name = result.get("meal_name", food_name)
+        log.detected_items = result.get("detected_items", [food_name])
+        log.confidence_per_item = result.get("confidence_per_item", {food_name: result["confidence_score"]})
+        log.serving_size_estimation = result.get("serving_size_estimation", "medium")
+        log.estimated_weight_g = result.get("estimated_weight_g", 350.0)
+        log.health_score = result.get("health_score", 6)
+        log.nutrition_confidence = result.get("nutrition_confidence", result["confidence_score"])
+        log.goal_alignment = result.get("goal_alignment", {"weight_loss": 5, "muscle_gain": 5, "maintenance": 5})
+        log.recommendation = result.get("recommendation", "Heuristic assessment completed.")
+        log.healthier_alternative = result.get("healthier_alternative", "Consider cooking with whole ingredients.")
+        log.annotations = result.get("annotations", [])
+
         log.status = "completed"
         log.processing_time_ms = (time.time() - start_time) * 1000.0
         db.commit()
     except Exception as e:
         db.rollback()
-        # Mark as failed
         log = db.query(FoodRecognitionLog).filter(FoodRecognitionLog.id == log_id).first()
         if log:
             log.status = "failed"

@@ -123,7 +123,20 @@ def upload_scan(
             fat=existing_scan.fat,
             confidence_score=existing_scan.confidence_score,
             provider=existing_scan.provider,
-            food_id=existing_scan.food_id
+            food_id=existing_scan.food_id,
+            
+            # Phase F-3.5 Fields
+            meal_name=existing_scan.meal_name,
+            detected_items=existing_scan.detected_items,
+            confidence_per_item=existing_scan.confidence_per_item,
+            serving_size_estimation=existing_scan.serving_size_estimation,
+            estimated_weight_g=existing_scan.estimated_weight_g,
+            health_score=existing_scan.health_score,
+            nutrition_confidence=existing_scan.nutrition_confidence,
+            goal_alignment=existing_scan.goal_alignment,
+            recommendation=existing_scan.recommendation,
+            healthier_alternative=existing_scan.healthier_alternative,
+            annotations=existing_scan.annotations
         )
         db.add(new_log)
         db.commit()

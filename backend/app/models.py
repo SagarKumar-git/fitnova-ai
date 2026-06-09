@@ -453,6 +453,19 @@ class FoodRecognitionLog(Base):
     food_id = Column(Uuid, ForeignKey("foods.food_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
+    # Phase F-3.5 Fields
+    meal_name = Column(String, nullable=True)
+    detected_items = Column(JSON, nullable=True)
+    confidence_per_item = Column(JSON, nullable=True)
+    serving_size_estimation = Column(String, nullable=True)
+    estimated_weight_g = Column(Float, nullable=True)
+    health_score = Column(Integer, nullable=True)
+    nutrition_confidence = Column(Float, nullable=True)
+    goal_alignment = Column(JSON, nullable=True)
+    recommendation = Column(String, nullable=True)
+    healthier_alternative = Column(String, nullable=True)
+    annotations = Column(JSON, nullable=True)
+
     user = relationship("User", back_populates="food_recognition_logs")
     food = relationship("Food")
 

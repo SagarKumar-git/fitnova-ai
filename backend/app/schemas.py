@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 class UserCreate(BaseModel):
@@ -618,6 +618,19 @@ class FoodRecognitionResponse(BaseModel):
     provider: Optional[str] = None
     created_at: datetime
     food_id: Optional[uuid.UUID] = None
+
+    # Phase F-3.5 Fields
+    meal_name: Optional[str] = None
+    detected_items: Optional[List[str]] = None
+    confidence_per_item: Optional[Dict[str, float]] = None
+    serving_size_estimation: Optional[str] = None
+    estimated_weight_g: Optional[float] = None
+    health_score: Optional[int] = None
+    nutrition_confidence: Optional[float] = None
+    goal_alignment: Optional[Dict[str, int]] = None
+    recommendation: Optional[str] = None
+    healthier_alternative: Optional[str] = None
+    annotations: Optional[List[Dict[str, Any]]] = None
 
     class Config:
         from_attributes = True

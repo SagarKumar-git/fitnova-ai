@@ -190,6 +190,39 @@ def seed_achievements_database():
 # seed_food_database()
 # seed_exercise_database()
 
+def migrate_food_recognition_logs_schema():
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    try:
+        columns = [col['name'] for col in inspector.get_columns("food_recognition_logs")]
+        new_cols = [
+            ("meal_name", "VARCHAR"),
+            ("detected_items", "JSON"),
+            ("confidence_per_item", "JSON"),
+            ("serving_size_estimation", "VARCHAR"),
+            ("estimated_weight_g", "FLOAT"),
+            ("health_score", "INTEGER"),
+            ("nutrition_confidence", "FLOAT"),
+            ("goal_alignment", "JSON"),
+            ("recommendation", "TEXT"),
+            ("healthier_alternative", "TEXT"),
+            ("annotations", "JSON")
+        ]
+        with engine.connect() as conn:
+            transaction = conn.begin()
+            try:
+                for col_name, col_type in new_cols:
+                    if col_name not in columns:
+                        conn.execute(text(f"ALTER TABLE food_recognition_logs ADD COLUMN {col_name} {col_type}"))
+                transaction.commit()
+                print("Database migration check completed for food_recognition_logs.")
+            except Exception as inner_e:
+                transaction.rollback()
+                print(f"Inner migration transaction failed: {inner_e}")
+                raise inner_e
+    except Exception as outer_e:
+        print(f"Failed to inspect or migrate food_recognition_logs: {outer_e}")
+
 # Surgically initialize only the new AI and achievement tables on startup
 try:
     AIWorkoutPlan.__table__.create(bind=engine, checkfirst=True)
@@ -199,6 +232,9 @@ try:
     AIInsight.__table__.create(bind=engine, checkfirst=True)
     FoodRecognitionLog.__table__.create(bind=engine, checkfirst=True)
     print("AI Coach, Achievement, AI Insight, and Food Recognition tables successfully initialized!")
+    
+    # Run auto-migration check
+    migrate_food_recognition_logs_schema()
 except Exception as e:
     print(f"Error surgically initializing tables: {e}")
 

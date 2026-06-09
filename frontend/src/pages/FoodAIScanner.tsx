@@ -27,6 +27,27 @@ interface FoodScanLog {
   confidence_score: number | null;
   created_at: string;
   food_id: string | null;
+
+  // Phase F-3.5 fields
+  meal_name?: string | null;
+  detected_items?: string[] | null;
+  confidence_per_item?: Record<string, number> | null;
+  serving_size_estimation?: string | null;
+  estimated_weight_g?: number | null;
+  health_score?: number | null;
+  nutrition_confidence?: number | null;
+  goal_alignment?: {
+    weight_loss?: number;
+    muscle_gain?: number;
+    maintenance?: number;
+  } | null;
+  recommendation?: string | null;
+  healthier_alternative?: string | null;
+  annotations?: Array<{
+    name: string;
+    confidence: number;
+    bounding_box: [number, number, number, number];
+  }> | null;
 }
 
 interface ScanStats {
@@ -185,7 +206,7 @@ export const FoodAIScanner: React.FC = () => {
       
       // Select scan for review
       setActiveScan(scanResult);
-      setEditedName(scanResult.food_name || 'Unknown Meal');
+      setEditedName(scanResult.meal_name || scanResult.food_name || 'Unknown Meal');
       setEditedCalories(Math.round(scanResult.calories || 0));
       setEditedProtein(Math.round(scanResult.protein || 0));
       setEditedCarbs(Math.round(scanResult.carbohydrates || 0));
@@ -302,7 +323,7 @@ export const FoodAIScanner: React.FC = () => {
 
   const selectScanFromHistory = (scan: FoodScanLog) => {
     setActiveScan(scan);
-    setEditedName(scan.food_name || 'Unknown Meal');
+    setEditedName(scan.meal_name || scan.food_name || 'Unknown Meal');
     setEditedCalories(Math.round(scan.calories || 0));
     setEditedProtein(Math.round(scan.protein || 0));
     setEditedCarbs(Math.round(scan.carbohydrates || 0));
@@ -440,164 +461,382 @@ export const FoodAIScanner: React.FC = () => {
 
           {/* Active Scan Review and Customization Editor */}
           {activeScan && (
-            <div className="glass-panel p-6 rounded-2xl border border-zinc-800 space-y-6 animate-fadeIn">
-              <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-                <h3 className="font-extrabold text-slate-100 tracking-wide text-sm uppercase flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-neonLime" />
-                  AI Prediction Analysis
-                </h3>
-                {confidence < 0.5 && (
-                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-bold uppercase border border-amber-500/20 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Low Confidence
-                  </span>
-                )}
+            <div className="glass-panel p-6 rounded-2xl border border-zinc-800 space-y-6 animate-fadeIn text-left">
+              
+              {/* Header: Name, Health Score, Tags */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-zinc-950/60 p-4 rounded-xl border border-zinc-900">
+                <div className="flex-1 min-w-0">
+                  <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">AI Meal Classification</span>
+                  <h4 className="text-lg font-black text-slate-100 mt-0.5 truncate">
+                    {activeScan.meal_name || editedName}
+                  </h4>
+                  {/* Dynamic Tags */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {editedProtein >= 20 && (
+                      <span className="px-2 py-0.5 rounded bg-neonCyan/10 text-neonCyan text-[9px] font-bold uppercase border border-neonCyan/20">
+                        High Protein
+                      </span>
+                    )}
+                    {editedFat >= 20 && (
+                      <span className="px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 text-[9px] font-bold uppercase border border-orange-500/20">
+                        High Fat
+                      </span>
+                    )}
+                    {editedCarbs <= 15 && (
+                      <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 text-[9px] font-bold uppercase border border-purple-500/20">
+                        Low Carb
+                      </span>
+                    )}
+                    {(activeScan.goal_alignment?.weight_loss || 5) >= 7 && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-bold uppercase border border-emerald-500/20">
+                        Weight Loss Friendly
+                      </span>
+                    )}
+                    {(activeScan.goal_alignment?.muscle_gain || 5) >= 7 && (
+                      <span className="px-2 py-0.5 rounded bg-neonLime/10 text-neonLime text-[9px] font-bold uppercase border border-neonLime/20">
+                        Muscle Gain Friendly
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider block">Health Score</span>
+                    <span className="text-[8px] text-zinc-400 block mt-0.5">Scale 1-10</span>
+                  </div>
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center border font-mono font-black text-base ${
+                    (activeScan.health_score || 6) >= 8 
+                      ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' 
+                      : (activeScan.health_score || 6) >= 5 
+                      ? 'bg-amber-950/30 border-amber-500/30 text-amber-400' 
+                      : 'bg-red-950/30 border-red-500/30 text-red-400'
+                  }`}>
+                    {activeScan.health_score || 6}
+                  </div>
+                </div>
               </div>
 
-              {/* Warnings */}
+              {/* Bounding box low confidence warning */}
               {confidence < 0.5 && (
                 <div className="p-3 bg-amber-950/20 border border-amber-900/30 rounded-xl text-xs text-amber-300 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
-                  <span>Low confidence prediction. Please verify before logging.</span>
+                  <span>Low confidence prediction. Please verify macros and details before logging.</span>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
-                {/* Image Preview */}
-                <div className="md:col-span-1">
-                  <div className="w-full aspect-square rounded-xl overflow-hidden border border-zinc-900 bg-zinc-950 relative group">
+                {/* Left Side: Bounding Box Image, Item Confidence list, Recommendations */}
+                <div className="lg:col-span-5 space-y-6">
+                  
+                  {/* Annotated Image Container */}
+                  <div className="w-full aspect-square rounded-xl overflow-hidden border border-zinc-900 bg-zinc-950 relative group shadow-inner">
                     <img 
                       src={getImageUrl(activeScan.image_filename)} 
                       alt="Scanned Food"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center justify-center">
-                      <span className="text-[10px] text-zinc-400 font-mono">
-                        {(activeScan.processing_time_ms || 0) > 0 
-                          ? `${activeScan.processing_time_ms?.toFixed(0)} ms` 
-                          : ''}
-                      </span>
+                    
+                    {/* Bounding box overlays */}
+                    {activeScan.annotations && activeScan.annotations.map((ann, idx) => {
+                      if (!ann.bounding_box || ann.bounding_box.length !== 4) return null;
+                      const [ymin, xmin, ymax, xmax] = ann.bounding_box;
+                      const top = ymin / 10;
+                      const left = xmin / 10;
+                      const width = (xmax - xmin) / 10;
+                      const height = (ymax - ymin) / 10;
+                      
+                      return (
+                        <div 
+                          key={idx}
+                          className="absolute border-2 border-neonLime/70 bg-neonLime/5 transition-all hover:bg-neonLime/15"
+                          style={{
+                            top: `${top}%`,
+                            left: `${left}%`,
+                            width: `${width}%`,
+                            height: `${height}%`,
+                          }}
+                        >
+                          <span className="absolute -top-5 left-0 bg-zinc-950/90 text-neonLime text-[8px] font-black px-1 py-0.5 rounded border border-neonLime/30 whitespace-nowrap shadow-md">
+                            {ann.name} ({Math.round(ann.confidence * 100)}%)
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[9px] text-zinc-400 font-mono">
+                      {(activeScan.processing_time_ms || 0) > 0 
+                        ? `${activeScan.processing_time_ms?.toFixed(0)} ms` 
+                        : 'Cached'}
                     </div>
                   </div>
+
+                  {/* Portions & Confidence Stats */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-900">
+                      <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Portion & Weight</span>
+                      <p className="text-xs text-slate-300 mt-1.5">
+                        Scale: <span className="text-neonLime font-bold capitalize">{activeScan.serving_size_estimation || "medium"}</span>
+                      </p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Weight: <span className="text-slate-200 font-bold">~{activeScan.estimated_weight_g || 350}g</span>
+                      </p>
+                    </div>
+                    <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-900">
+                      <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Analysis Accuracy</span>
+                      <p className="text-xl font-black text-neonCyan mt-1">
+                        {Math.round((activeScan.nutrition_confidence || activeScan.confidence_score || 0.85) * 100)}%
+                      </p>
+                      <span className="text-[8px] text-zinc-650 block mt-0.5">Confidence Level</span>
+                    </div>
+                  </div>
+
+                  {/* Detected Items Progress Bars */}
+                  <div>
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Detected Ingredients</span>
+                    <div className="space-y-2 bg-zinc-950/40 p-3 rounded-xl border border-zinc-900">
+                      {activeScan.detected_items && activeScan.detected_items.map((item, index) => {
+                        const conf = (activeScan.confidence_per_item && activeScan.confidence_per_item[item]) || activeScan.confidence_score || 0.85;
+                        return (
+                          <div key={index} className="space-y-0.5">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="font-semibold text-zinc-300">{item}</span>
+                              <span className="font-mono text-neonLime text-[10px]">{Math.round(conf * 100)}%</span>
+                            </div>
+                            <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-neonLime h-full rounded-full"
+                                style={{ width: `${conf * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(!activeScan.detected_items || activeScan.detected_items.length === 0) && (
+                        <span className="text-xs italic text-zinc-600 block text-center py-2">No individual ingredients detected.</span>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Edit Form */}
-                <div className="md:col-span-2 space-y-4 text-left">
+                {/* Right Side: Goals, Alternatives, Logging Form */}
+                <div className="lg:col-span-7 space-y-6">
                   
-                  {/* Name field */}
+                  {/* Fitness Goal Alignment */}
                   <div>
-                    <label className="block text-zinc-500 font-bold mb-1 uppercase tracking-wider text-[10px]">Predicted Food Name</label>
-                    <input 
-                      type="text" 
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-100 focus:outline-none focus:border-neonLime text-xs"
-                      required
-                    />
-                  </div>
-
-                  {/* Macros input grid */}
-                  <div>
-                    <label className="block text-zinc-500 font-bold mb-1.5 uppercase tracking-wider text-[10px]">Estimated Macronutrients (per 100g serving)</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      <div>
-                        <span className="block text-center text-[9px] font-bold text-zinc-500 uppercase mb-1">Calories</span>
-                        <input 
-                          type="number"
-                          value={editedCalories}
-                          onChange={(e) => setEditedCalories(parseInt(e.target.value) || 0)}
-                          className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-100 text-center font-bold text-xs"
-                        />
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Fitness Goal Compatibility</span>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="bg-zinc-950/20 p-2.5 rounded-xl border border-zinc-900/60 text-center">
+                        <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Weight Loss</span>
+                        <span className={`text-sm font-black mt-1 block ${(activeScan.goal_alignment?.weight_loss || 5) >= 7 ? 'text-emerald-400' : (activeScan.goal_alignment?.weight_loss || 5) >= 5 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                          {activeScan.goal_alignment?.weight_loss || 5}/10
+                        </span>
+                        <div className="w-full bg-zinc-900 h-1 rounded-full mt-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${(activeScan.goal_alignment?.weight_loss || 5) >= 7 ? 'bg-emerald-500' : (activeScan.goal_alignment?.weight_loss || 5) >= 5 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                            style={{ width: `${(activeScan.goal_alignment?.weight_loss || 5) * 10}%` }}
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <span className="block text-center text-[9px] font-bold text-zinc-500 uppercase mb-1">Protein</span>
-                        <input 
-                          type="number"
-                          value={editedProtein}
-                          onChange={(e) => setEditedProtein(parseInt(e.target.value) || 0)}
-                          className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-neonCyan text-center font-bold text-xs"
-                        />
+                      <div className="bg-zinc-950/20 p-2.5 rounded-xl border border-zinc-900/60 text-center">
+                        <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Muscle Gain</span>
+                        <span className={`text-sm font-black mt-1 block ${(activeScan.goal_alignment?.muscle_gain || 5) >= 7 ? 'text-emerald-400' : (activeScan.goal_alignment?.muscle_gain || 5) >= 5 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                          {activeScan.goal_alignment?.muscle_gain || 5}/10
+                        </span>
+                        <div className="w-full bg-zinc-900 h-1 rounded-full mt-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${(activeScan.goal_alignment?.muscle_gain || 5) >= 7 ? 'bg-emerald-500' : (activeScan.goal_alignment?.muscle_gain || 5) >= 5 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                            style={{ width: `${(activeScan.goal_alignment?.muscle_gain || 5) * 10}%` }}
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <span className="block text-center text-[9px] font-bold text-zinc-500 uppercase mb-1">Carbs</span>
-                        <input 
-                          type="number"
-                          value={editedCarbs}
-                          onChange={(e) => setEditedCarbs(parseInt(e.target.value) || 0)}
-                          className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-300 text-center font-bold text-xs"
-                        />
-                      </div>
-                      <div>
-                        <span className="block text-center text-[9px] font-bold text-zinc-500 uppercase mb-1">Fat</span>
-                        <input 
-                          type="number"
-                          value={editedFat}
-                          onChange={(e) => setEditedFat(parseInt(e.target.value) || 0)}
-                          className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-orange-400 text-center font-bold text-xs"
-                        />
+                      <div className="bg-zinc-950/20 p-2.5 rounded-xl border border-zinc-900/60 text-center">
+                        <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Maintenance</span>
+                        <span className={`text-sm font-black mt-1 block ${(activeScan.goal_alignment?.maintenance || 5) >= 7 ? 'text-emerald-400' : (activeScan.goal_alignment?.maintenance || 5) >= 5 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                          {activeScan.goal_alignment?.maintenance || 5}/10
+                        </span>
+                        <div className="w-full bg-zinc-900 h-1 rounded-full mt-1.5 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${(activeScan.goal_alignment?.maintenance || 5) >= 7 ? 'bg-emerald-500' : (activeScan.goal_alignment?.maintenance || 5) >= 5 ? 'bg-amber-500' : 'bg-zinc-800'}`}
+                            style={{ width: `${(activeScan.goal_alignment?.maintenance || 5) * 10}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Logging Setup */}
-                  <div className="border-t border-zinc-900 pt-4 mt-2">
-                    <p className="font-bold text-[10px] text-zinc-500 mb-3 uppercase tracking-wider">Diary Logging parameters</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Meal Type</label>
-                        <select 
-                          value={mealType} 
-                          onChange={(e) => setMealType(e.target.value)}
-                          className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs focus:outline-none"
-                        >
-                          {mealTypes.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
+                  {/* AI Recommendation & Healthier Alternative */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className="bg-zinc-950/30 p-3.5 rounded-xl border border-zinc-900/60">
+                      <div className="flex items-center gap-1.5 text-zinc-400 text-[9px] font-bold uppercase tracking-wider mb-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-neonLime" /> AI Recommendation
                       </div>
-                      <div>
-                        <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Servings</label>
-                        <input 
-                          type="number" 
-                          step="0.1"
-                          value={servings}
-                          onChange={(e) => setServings(parseFloat(e.target.value) || 0.0)}
-                          className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs text-center"
-                        />
+                      <p className="text-xs text-zinc-300 leading-relaxed">
+                        {activeScan.recommendation || "Portion macros look standard. Enjoy your meal!"}
+                      </p>
+                    </div>
+                    <div className="bg-emerald-950/10 p-3.5 rounded-xl border border-emerald-900/20">
+                      <div className="flex items-center gap-1.5 text-emerald-400 text-[9px] font-bold uppercase tracking-wider mb-1.5">
+                        <CheckCircle className="w-3.5 h-3.5" /> Healthier Alternative
                       </div>
-                      <div>
-                        <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Logged Date</label>
-                        <input 
-                          type="date"
-                          value={logDate}
-                          onChange={(e) => setLogDate(e.target.value)}
-                          className="w-full px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs text-center"
-                        />
+                      <p className="text-xs text-emerald-300 leading-relaxed">
+                        {activeScan.healthier_alternative || "Consider roasted whole foods instead."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Daily Nutrition Impact */}
+                  <div>
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-2 block">Daily Nutrition Impact (2,000 kcal baseline)</span>
+                    <div className="grid grid-cols-4 gap-2 bg-zinc-950/20 p-3 rounded-xl border border-zinc-900/60">
+                      <div className="text-center">
+                        <span className="text-[8px] font-bold text-zinc-500 uppercase">Calories</span>
+                        <span className="block text-xs font-bold text-slate-200 mt-1">
+                          {Math.round(((editedCalories * servings) / 2000) * 100)}%
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[8px] font-bold text-zinc-500 uppercase">Protein</span>
+                        <span className="block text-xs font-bold text-neonCyan mt-1">
+                          {Math.round(((editedProtein * servings) / 130) * 100)}%
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[8px] font-bold text-zinc-500 uppercase">Carbs</span>
+                        <span className="block text-xs font-bold text-slate-400 mt-1">
+                          {Math.round(((editedCarbs * servings) / 220) * 100)}%
+                        </span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[8px] font-bold text-zinc-500 uppercase">Fat</span>
+                        <span className="block text-xs font-bold text-orange-400 mt-1">
+                          {Math.round(((editedFat * servings) / 65) * 100)}%
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Submission and Close buttons */}
-                  <div className="flex gap-3 pt-3">
-                    <button
-                      onClick={handleLogMeal}
-                      disabled={loggingMeal}
-                      className="flex-1 py-2.5 bg-gradient-to-r from-neonLime to-neonCyan text-black font-bold uppercase rounded-xl text-xs hover:shadow-[0_0_15px_rgba(163,230,53,0.15)] transition-all duration-150 flex items-center justify-center gap-1"
-                    >
-                      {loggingMeal ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Logging...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-3.5 h-3.5 stroke-[2.5]" /> Log to Nutrition Diary
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setActiveScan(null)}
-                      className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-white text-xs font-bold uppercase rounded-xl transition-all duration-150"
-                    >
-                      Discard
-                    </button>
+                  {/* Form Editor */}
+                  <div className="space-y-4 pt-2 border-t border-zinc-900">
+                    
+                    {/* Name field */}
+                    <div>
+                      <label className="block text-zinc-500 font-bold mb-1 uppercase tracking-wider text-[9px]">Logged Food Name</label>
+                      <input 
+                        type="text" 
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-100 focus:outline-none focus:border-neonLime text-xs"
+                        required
+                      />
+                    </div>
+
+                    {/* Macros input grid */}
+                    <div>
+                      <label className="block text-zinc-500 font-bold mb-1.5 uppercase tracking-wider text-[9px]">Nutrient Values (per 100g serving)</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <span className="block text-center text-[8px] font-bold text-zinc-500 uppercase mb-0.5">Calories</span>
+                          <input 
+                            type="number"
+                            value={editedCalories}
+                            onChange={(e) => setEditedCalories(parseInt(e.target.value) || 0)}
+                            className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-100 text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-center text-[8px] font-bold text-zinc-500 uppercase mb-0.5">Protein</span>
+                          <input 
+                            type="number"
+                            value={editedProtein}
+                            onChange={(e) => setEditedProtein(parseInt(e.target.value) || 0)}
+                            className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-neonCyan text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-center text-[8px] font-bold text-zinc-500 uppercase mb-0.5">Carbs</span>
+                          <input 
+                            type="number"
+                            value={editedCarbs}
+                            onChange={(e) => setEditedCarbs(parseInt(e.target.value) || 0)}
+                            className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-300 text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <span className="block text-center text-[8px] font-bold text-zinc-500 uppercase mb-0.5">Fat</span>
+                          <input 
+                            type="number"
+                            value={editedFat}
+                            onChange={(e) => setEditedFat(parseInt(e.target.value) || 0)}
+                            className="w-full px-1 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-orange-400 text-center font-bold text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Logging Parameters */}
+                    <div className="bg-zinc-950/20 p-4 rounded-xl border border-zinc-900">
+                      <span className="block font-bold text-[9px] text-zinc-500 mb-2.5 uppercase tracking-wider">Diary Parameters</span>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Meal Type</label>
+                          <select 
+                            value={mealType} 
+                            onChange={(e) => setMealType(e.target.value)}
+                            className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs focus:outline-none"
+                          >
+                            {mealTypes.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Servings</label>
+                          <input 
+                            type="number" 
+                            step="0.1"
+                            value={servings}
+                            onChange={(e) => setServings(parseFloat(e.target.value) || 0.0)}
+                            className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs text-center font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-zinc-500 font-semibold mb-1 text-[9px] uppercase">Logged Date</label>
+                          <input 
+                            type="date"
+                            value={logDate}
+                            onChange={(e) => setLogDate(e.target.value)}
+                            className="w-full px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-slate-200 text-xs text-center font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={handleLogMeal}
+                        disabled={loggingMeal}
+                        className="flex-1 py-2.5 bg-gradient-to-r from-neonLime to-neonCyan text-black font-bold uppercase rounded-xl text-xs hover:shadow-[0_0_15px_rgba(163,230,53,0.15)] transition-all duration-150 flex items-center justify-center gap-1.5"
+                      >
+                        {loggingMeal ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Logging...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5 stroke-[2.5]" /> Log to Nutrition Diary
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setActiveScan(null)}
+                        className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-white text-xs font-bold uppercase rounded-xl transition-all duration-150"
+                      >
+                        Discard
+                      </button>
+                    </div>
+
                   </div>
 
                 </div>
