@@ -387,6 +387,13 @@ class AIMealPlan(Base):
     meals_data = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
+    # Biometrics used at time of generation
+    goal = Column(String, nullable=True)
+    weight = Column(Float, nullable=True)
+    height = Column(Float, nullable=True)
+    age = Column(Integer, nullable=True)
+    activity_level = Column(String, nullable=True)
+
     user = relationship("User", back_populates="ai_meal_plans")
 
 

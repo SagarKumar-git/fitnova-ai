@@ -406,11 +406,18 @@ def generate_meal_plan(
         )
 
     try:
+        # Resolve target variables using overrides or profile values
+        input_goal = meal_in.goal if meal_in.goal else profile.goal
+        input_weight = meal_in.weight if meal_in.weight else profile.weight
+        input_height = meal_in.height if meal_in.height else profile.height
+        input_age = meal_in.age if meal_in.age else profile.age
+        input_activity = meal_in.activity_level if meal_in.activity_level else profile.activity_level
+
         # Calculate daily targets
-        bmr = calculate_bmr(profile.weight, profile.height, profile.age, profile.gender)
-        tdee = calculate_tdee(bmr, profile.activity_level)
-        calories = calculate_calorie_target(tdee, profile.goal)
-        protein = calculate_protein_target(profile.weight, profile.goal)
+        bmr = calculate_bmr(input_weight, input_height, input_age, profile.gender)
+        tdee = calculate_tdee(bmr, input_activity)
+        calories = calculate_calorie_target(tdee, input_goal)
+        protein = calculate_protein_target(input_weight, input_goal)
         
         # Calculate fats: 25% of calorie intake, 1g fat = 9 calories
         fat = (calories * 0.25) / 9.0
@@ -513,7 +520,7 @@ def generate_meal_plan(
             for meal_type, macros in macro_splits.items():
                 meal_options = diet_db[meal_type]
                 # Select option based on simple hashing or random
-                idx = (int(profile.weight) + int(profile.height) + int(calories)) % len(meal_options)
+                idx = (int(input_weight) + int(input_height) + int(calories)) % len(meal_options)
                 meal_name = meal_options[idx]
 
                 meals_data[meal_type] = {
@@ -546,7 +553,12 @@ def generate_meal_plan(
             protein=round(protein, 1),
             carbohydrates=round(carbs, 1),
             fat=round(fat, 1),
-            meals_data=meals_data
+            meals_data=meals_data,
+            goal=input_goal,
+            weight=input_weight,
+            height=input_height,
+            age=input_age,
+            activity_level=input_activity
         )
 
         db.add(new_meal_plan)
@@ -584,6 +596,20 @@ def get_latest_meal_plan(
     return plan
 
 
+@router.get("/meal/history", response_model=List[AIMealResponse])
+def get_meal_plan_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves all generated meal plans for the user.
+    """
+    plans = db.query(AIMealPlan).filter(
+        AIMealPlan.user_id == current_user.id
+    ).order_by(AIMealPlan.created_at.desc()).all()
+    return plans
+
+
 @router.delete("/meal/{meal_id}", status_code=status.HTTP_200_OK)
 def delete_meal_plan(
     meal_id: uuid.UUID,
@@ -613,3 +639,149 @@ def delete_meal_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete meal plan: {str(e)}"
         )
+
+
+@router.post("/meal/{meal_id}/swap", response_model=AIMealResponse)
+def swap_meal(
+    meal_id: uuid.UUID,
+    meal_type: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Swaps a single meal (e.g. Breakfast, Lunch, Dinner, Snack) in the generated meal plan.
+    """
+    plan = db.query(AIMealPlan).filter(
+        AIMealPlan.id == meal_id,
+        AIMealPlan.user_id == current_user.id
+    ).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal plan not found or not owned by user."
+        )
+
+    meals_data = dict(plan.meals_data)
+    if meal_type not in meals_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid meal type: {meal_type}. Must be one of {list(meals_data.keys())}."
+        )
+
+    meal_macros = meals_data[meal_type]
+
+    # Formulate prompt for Gemini
+    prompt = (
+        f"Suggest a replacement meal for '{meal_type}' that has roughly these macros:\n"
+        f"- Calories: {meal_macros['calories']} kcal\n"
+        f"- Protein: {meal_macros['protein']} g\n"
+        f"- Carbohydrates: {meal_macros['carbohydrates']} g\n"
+        f"- Fat: {meal_macros['fat']} g\n"
+        f"- Diet Type: {plan.diet_type}\n"
+        f"- Diet Cuisine Preference: {plan.diet_cuisine}\n\n"
+        f"The current meal is: '{meal_macros['name']}'. Please suggest a DIFFERENT meal.\n"
+        f"You must return a JSON object with the following fields:\n"
+        f"- 'name': string (delicious, descriptive meal name suitable for the diet and cuisine)\n"
+        f"- 'calories': float (calories for this meal)\n"
+        f"- 'protein': float (protein in grams)\n"
+        f"- 'carbohydrates': float (carbohydrates in grams)\n"
+        f"- 'fat': float (fat in grams)\n"
+    )
+
+    success = False
+    response_text, _, _, ok = call_gemini_api(prompt, json_mode=True)
+    if ok and response_text:
+        try:
+            swap_data = json.loads(response_text)
+            # Verify fields exist
+            required_keys = ["name", "calories", "protein", "carbohydrates", "fat"]
+            if all(k in swap_data for k in required_keys):
+                meals_data[meal_type] = {
+                    "name": swap_data["name"],
+                    "calories": round(swap_data["calories"], 1),
+                    "protein": round(swap_data["protein"], 1),
+                    "carbohydrates": round(swap_data["carbohydrates"], 1),
+                    "fat": round(swap_data["fat"], 1)
+                }
+                success = True
+        except Exception as parse_err:
+            print(f"Failed to parse Gemini swap meal JSON: {parse_err}")
+
+    # Fallback if Gemini fails
+    if not success:
+        # Generate simple fallback text
+        fallback_name = f"Alternative {plan.diet_type} {meal_type} Bowl"
+        meals_data[meal_type] = {
+            "name": fallback_name,
+            "calories": meal_macros["calories"],
+            "protein": meal_macros["protein"],
+            "carbohydrates": meal_macros["carbohydrates"],
+            "fat": meal_macros["fat"]
+        }
+
+    try:
+        from sqlalchemy.orm.attributes import flag_modified
+        plan.meals_data = meals_data
+        # Force SQLAlchemy to detect changes to JSON field
+        flag_modified(plan, "meals_data")
+        db.commit()
+        db.refresh(plan)
+        return plan
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save swapped meal: {str(e)}"
+        )
+
+
+@router.get("/meal/{meal_id}/grocery")
+def get_meal_plan_grocery(
+    meal_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates a grocery shopping list based on the active meal plan.
+    """
+    plan = db.query(AIMealPlan).filter(
+        AIMealPlan.id == meal_id,
+        AIMealPlan.user_id == current_user.id
+    ).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal plan not found or not owned by user."
+        )
+
+    meals_list = "\n".join([f"- {m_type}: {m_data['name']}" for m_type, m_data in plan.meals_data.items()])
+    prompt = (
+        f"Based on the following daily meal plan:\n{meals_list}\n\n"
+        f"Generate a categorized grocery list (e.g. Vegetables, Grains/Carbs, Proteins/Dairy, Pantry) "
+        f"required to prepare these meals. For each item, provide a suggested quantity.\n"
+        f"You must return a JSON object where the keys are category names and the values are lists of strings (items with quantities).\n"
+        f"Example output:\n"
+        f"{{\n"
+        f"  \"Proteins & Dairy\": [\"Greek Yogurt (500g)\", \"Paneer (200g)\"],\n"
+        f"  \"Fruits & Vegetables\": [\"Banana (3 pieces)\", \"Spinach (100g)\"]\n"
+        f"}}"
+    )
+
+    success = False
+    response_text, _, _, ok = call_gemini_api(prompt, json_mode=True)
+    if ok and response_text:
+        try:
+            grocery_data = json.loads(response_text)
+            if isinstance(grocery_data, dict):
+                return grocery_data
+        except Exception:
+            pass
+
+    # Fallback grocery list
+    return {
+        "Proteins & Dairy": ["Milk / Curd", "Paneer / Tofu / Chicken"],
+        "Produce": ["Seasonal Vegetables", "Fresh Fruits / Bananas"],
+        "Pantry": ["Rice / Roti Flour", "Cooking Oil", "Spices & Herbs"]
+    }

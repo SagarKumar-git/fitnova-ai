@@ -223,6 +223,33 @@ def migrate_food_recognition_logs_schema():
     except Exception as outer_e:
         print(f"Failed to inspect or migrate food_recognition_logs: {outer_e}")
 
+def migrate_ai_meal_plans_schema():
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    try:
+        columns = [col['name'] for col in inspector.get_columns("ai_meal_plans")]
+        new_cols = [
+            ("goal", "VARCHAR"),
+            ("weight", "FLOAT"),
+            ("height", "FLOAT"),
+            ("age", "INTEGER"),
+            ("activity_level", "VARCHAR")
+        ]
+        with engine.connect() as conn:
+            transaction = conn.begin()
+            try:
+                for col_name, col_type in new_cols:
+                    if col_name not in columns:
+                        conn.execute(text(f"ALTER TABLE ai_meal_plans ADD COLUMN {col_name} {col_type}"))
+                transaction.commit()
+                print("Database migration check completed for ai_meal_plans.")
+            except Exception as inner_e:
+                transaction.rollback()
+                print(f"Inner migration transaction failed: {inner_e}")
+                raise inner_e
+    except Exception as outer_e:
+        print(f"Failed to inspect or migrate ai_meal_plans: {outer_e}")
+
 # Surgically initialize only the new AI and achievement tables on startup
 try:
     AIWorkoutPlan.__table__.create(bind=engine, checkfirst=True)
@@ -235,6 +262,7 @@ try:
     
     # Run auto-migration check
     migrate_food_recognition_logs_schema()
+    migrate_ai_meal_plans_schema()
 except Exception as e:
     print(f"Error surgically initializing tables: {e}")
 

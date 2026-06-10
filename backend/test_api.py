@@ -189,5 +189,59 @@ class TestFitNovaAPIPhase2(unittest.TestCase):
         self.assertEqual(data["calories_consumed"], 420.0)
         self.assertEqual(data["protein_consumed"], 27.0)
 
+        # 11. AI Meal Planner v1 Endpoints
+        # A. Generate meal plan with custom biometric overrides
+        ai_payload = {
+            "diet_type": "Vegetarian",
+            "diet_cuisine": "Indian Diet",
+            "goal": "Muscle Gain",
+            "weight": 75.0,
+            "height": 175.0,
+            "age": 28,
+            "activity_level": "Moderate"
+        }
+        response = self.client.post("/api/ai/meal", json=ai_payload, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        ai_plan = response.json()
+        self.assertIn("meals_data", ai_plan)
+        self.assertEqual(ai_plan["goal"], "Muscle Gain")
+        self.assertEqual(ai_plan["weight"], 75.0)
+        self.assertEqual(ai_plan["diet_type"], "Vegetarian")
+        ai_plan_id = ai_plan["id"]
+
+        # B. Get latest AI plan
+        response = self.client.get("/api/ai/meal", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], ai_plan_id)
+
+        # C. Get AI plan history
+        response = self.client.get("/api/ai/meal/history", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(len(response.json()) >= 1)
+        self.assertEqual(response.json()[0]["id"], ai_plan_id)
+
+        # D. Get Grocery list
+        response = self.client.get(f"/api/ai/meal/{ai_plan_id}/grocery", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        grocery_data = response.json()
+        self.assertIsInstance(grocery_data, dict)
+        self.assertTrue(len(grocery_data.keys()) > 0)
+
+        # E. Swap a meal (should work with fallback if Gemini API is missing)
+        response = self.client.post(f"/api/ai/meal/{ai_plan_id}/swap?meal_type=Breakfast", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        swapped_plan = response.json()
+        self.assertIn("Breakfast", swapped_plan["meals_data"])
+        self.assertTrue(len(swapped_plan["meals_data"]["Breakfast"]["name"]) > 0)
+
+        # F. Delete AI meal plan
+        response = self.client.delete(f"/api/ai/meal/{ai_plan_id}", headers=headers)
+        self.assertEqual(response.status_code, 200)
+
+        # G. Verify history is empty now
+        response = self.client.get("/api/ai/meal/history", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(ai_plan_id, [p["id"] for p in response.json()])
+
 if __name__ == "__main__":
     unittest.main()

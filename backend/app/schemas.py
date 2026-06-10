@@ -521,6 +521,11 @@ class AIWorkoutResponse(BaseModel):
 class AIMealCreate(BaseModel):
     diet_type: str = Field(..., description="Vegetarian, Non Vegetarian")
     diet_cuisine: str = Field(..., description="Indian Diet, Global")
+    goal: Optional[str] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    age: Optional[int] = None
+    activity_level: Optional[str] = None
 
 class AIMealResponse(BaseModel):
     id: uuid.UUID
@@ -533,6 +538,11 @@ class AIMealResponse(BaseModel):
     fat: float
     meals_data: dict
     created_at: datetime
+    goal: Optional[str] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    age: Optional[int] = None
+    activity_level: Optional[str] = None
 
     class Config:
         from_attributes = True
