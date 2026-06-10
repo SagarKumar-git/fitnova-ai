@@ -8,6 +8,10 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar-collapsed');
+    return saved ? JSON.parse(saved) : false;
+  });
 
   return (
     <div className="flex h-screen bg-darkBg text-slate-100 relative overflow-hidden">
@@ -31,10 +35,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </header>
 
       {/* Sidebar Navigation Drawer */}
-      <div className={`fixed inset-y-0 left-0 z-50 transform lg:transform-none lg:static lg:flex-shrink-0 ${
+      <div className={`fixed inset-y-0 left-0 z-50 transform lg:transform-none lg:static lg:flex-shrink-0 transition-all duration-300 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      } transition-transform duration-300 ease-in-out`}>
-        <Sidebar onClose={() => setIsMobileMenuOpen(false)} />
+      } ${isCollapsed ? 'w-64 lg:w-20' : 'w-64'}`}>
+        <Sidebar 
+          onClose={() => setIsMobileMenuOpen(false)} 
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+        />
       </div>
 
       {/* Mobile Backdrop */}
