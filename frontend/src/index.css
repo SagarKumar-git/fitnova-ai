@@ -36,6 +36,29 @@
   background: #a3e635;
 }
 
+/* Custom scrollbar for sidebar */
+.custom-sidebar-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 2px;
+}
+
+.custom-sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a3e635;
+}
+
+.custom-sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #27272a transparent;
+}
+
 /* Custom utilities */
 .glass-panel {
   background: rgba(24, 24, 27, 0.65);

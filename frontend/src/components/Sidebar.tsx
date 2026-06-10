@@ -38,9 +38,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
   return (
     <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col justify-between h-screen sticky top-0">
-      <div className="p-6">
-        {/* Brand Logo */}
-        <div className="flex items-center justify-between mb-8">
+      {/* Brand Logo */}
+      <div className="p-6 pb-2">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-tr from-neonLime to-neonCyan rounded-xl flex items-center justify-center neon-glow-lime">
               <Activity className="w-6 h-6 text-black stroke-[2.5]" />
@@ -61,143 +61,143 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
             </button>
           )}
         </div>
-
-        {/* Navigation Section */}
-        <nav className="space-y-1 overflow-y-auto flex-1 pr-1" aria-label="Main navigation">
-          <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Core Platform</p>
-          
-          <NavLink 
-            to="/dashboard"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard</span>
-          </NavLink>
-
-          <NavLink 
-            to="/profile-setup"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <User className="w-4 h-4" />
-            <span>Profile</span>
-          </NavLink>
-
-          <NavLink 
-            to="/nutrition"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Apple className="w-4 h-4" />
-            <span>Nutrition</span>
-          </NavLink>
-
-          <NavLink 
-            to="/food-ai-scanner"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Camera className="w-4 h-4" />
-            <span>Food Scanner</span>
-          </NavLink>
-
-          <NavLink 
-            to="/meal-plans"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Coffee className="w-4 h-4" />
-            <span>Meal Plans</span>
-          </NavLink>
-
-          <NavLink 
-            to="/workouts"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Dumbbell className="w-4 h-4" />
-            <span>Workouts</span>
-          </NavLink>
-
-          <NavLink 
-            to="/exercises"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Activity className="w-4 h-4" />
-            <span>Exercise Library</span>
-          </NavLink>
-
-          <NavLink 
-            to="/analytics"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <LineChart className="w-4 h-4" />
-            <span>Weight Analytics</span>
-          </NavLink>
-
-          <NavLink 
-            to="/workout-analytics"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <LineChart className="w-4 h-4" />
-            <span>Workout Analytics</span>
-          </NavLink>
-
-          {user?.role === 'admin' && (
-            <>
-              <div className="pt-6 pb-2">
-                <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Admin Panel</p>
-              </div>
-              <NavLink 
-                to="/admin"
-                className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-                onClick={onClose}
-              >
-                <Shield className="w-4 h-4" />
-                <span>Admin Dashboard</span>
-              </NavLink>
-            </>
-          )}
-
-          <NavLink 
-            to="/ai-coach"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>AI Coach</span>
-          </NavLink>
-
-          <NavLink 
-            to="/ai-insights"
-            className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
-            onClick={onClose}
-          >
-            <Lightbulb className="w-4 h-4" />
-            <span>AI Insights</span>
-          </NavLink>
-
-          {/* Install App Link */}
-          {isInstallable && (
-            <div className="px-2 pt-4">
-              <button
-                onClick={installApp}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-neonCyan hover:bg-neonCyan/10 border border-dashed border-neonCyan/30 bg-neonCyan/5 transition-all duration-200 text-left cursor-pointer"
-              >
-                <Download className="w-4 h-4 text-neonCyan animate-bounce" />
-                <span>Install FitNova AI</span>
-              </button>
-            </div>
-          )}
-        </nav>
       </div>
 
+      {/* Navigation Section */}
+      <nav className="space-y-1 overflow-y-auto flex-1 px-6 py-4 custom-sidebar-scrollbar" aria-label="Main navigation">
+        <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Core Platform</p>
+        
+        <NavLink 
+          to="/dashboard"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          <span>Dashboard</span>
+        </NavLink>
+
+        <NavLink 
+          to="/profile-setup"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <User className="w-4 h-4" />
+          <span>Profile</span>
+        </NavLink>
+
+        <NavLink 
+          to="/nutrition"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Apple className="w-4 h-4" />
+          <span>Nutrition</span>
+        </NavLink>
+
+        <NavLink 
+          to="/food-ai-scanner"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Camera className="w-4 h-4" />
+          <span>Food Scanner</span>
+        </NavLink>
+
+        <NavLink 
+          to="/meal-plans"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Coffee className="w-4 h-4" />
+          <span>Meal Plans</span>
+        </NavLink>
+
+        <NavLink 
+          to="/workouts"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Dumbbell className="w-4 h-4" />
+          <span>Workouts</span>
+        </NavLink>
+
+        <NavLink 
+          to="/exercises"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Activity className="w-4 h-4" />
+          <span>Exercise Library</span>
+        </NavLink>
+
+        <NavLink 
+          to="/analytics"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <LineChart className="w-4 h-4" />
+          <span>Weight Analytics</span>
+        </NavLink>
+
+        <NavLink 
+          to="/workout-analytics"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <LineChart className="w-4 h-4" />
+          <span>Workout Analytics</span>
+        </NavLink>
+
+        {user?.role === 'admin' && (
+          <>
+            <div className="pt-6 pb-2">
+              <p className="px-4 text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">Admin Panel</p>
+            </div>
+            <NavLink 
+              to="/admin"
+              className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+              onClick={onClose}
+            >
+              <Shield className="w-4 h-4" />
+              <span>Admin Dashboard</span>
+            </NavLink>
+          </>
+        )}
+
+        <NavLink 
+          to="/ai-coach"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>AI Coach</span>
+        </NavLink>
+
+        <NavLink 
+          to="/ai-insights"
+          className={({ isActive }) => isActive ? activeLinkClass : normalLinkClass}
+          onClick={onClose}
+        >
+          <Lightbulb className="w-4 h-4" />
+          <span>AI Insights</span>
+        </NavLink>
+
+        {/* Install App Link */}
+        {isInstallable && (
+          <div className="px-2 pt-4">
+            <button
+              onClick={installApp}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-neonCyan hover:bg-neonCyan/10 border border-dashed border-neonCyan/30 bg-neonCyan/5 transition-all duration-200 text-left cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-neonCyan animate-bounce" />
+              <span>Install FitNova AI</span>
+            </button>
+          </div>
+        )}
+      </nav>
+
       {/* User Footer Profile & Logout */}
-      <div className="p-4 border-t border-zinc-900 bg-zinc-950/80">
+      <div className="p-4 border-t border-zinc-900 bg-zinc-950/80 sticky bottom-0 z-10">
         <div className="flex items-center gap-3 mb-4 px-2">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800 font-bold text-sm text-neonLime">
             {user?.name ? user.name[0].toUpperCase() : 'U'}
