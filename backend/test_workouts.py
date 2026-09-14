@@ -251,5 +251,23 @@ class TestFitNovaWorkoutsAPI(unittest.TestCase):
         self.assertEqual(len(history["progress_curve"]), 1)
         self.assertEqual(history["progress_curve"][0]["estimated_1rm"], 99.2)
 
+        # 12. Fetch Workout Sessions History (Sprint 3.3 endpoint)
+        res = self.client.get("/api/workouts/sessions?limit=10&offset=0", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        sessions_list = res.json()
+        self.assertEqual(len(sessions_list), 1)
+        self.assertEqual(sessions_list[0]["id"], finished_session["id"])
+        self.assertEqual(sessions_list[0]["name"], "Push Strength Routine Live")
+        self.assertEqual(len(sessions_list[0]["sets"]), 2)
+
+        # 13. Fetch User Personal Records List (Sprint 3.3 endpoint)
+        res = self.client.get("/api/exercises/personal-records", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        pr_list = res.json()
+        self.assertGreaterEqual(len(pr_list), 1)
+        bench_pr = next((p for p in pr_list if p["exercise_id"] == bench_press["id"]), None)
+        self.assertIsNotNone(bench_pr)
+        self.assertEqual(bench_pr["best_weight"], 85.0)
+
 if __name__ == "__main__":
     unittest.main()

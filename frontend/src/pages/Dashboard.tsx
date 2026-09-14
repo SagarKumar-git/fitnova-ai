@@ -1,8 +1,16 @@
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../context/AuthContext";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
+import {
+  useEventBus,
+  useAnalytics,
+  useTelemetry,
+  useNotificationService,
+} from '../platform/container/PlatformContext.tsx';
+import { normalizeError, getUserSafeMessage } from '../platform/errors/index.ts';
+import { logger } from '../utils/logger.ts';
 import { 
   Flame, 
   Droplet, 
@@ -16,7 +24,9 @@ import {
   Zap,
   Info,
   Plus,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 interface DashboardData {
@@ -41,13 +51,19 @@ interface DashboardData {
 
 export const Dashboard: React.FC = () => {
   const { apiFetch } = useAuth();
+  const eventBus = useEventBus();
+  const analytics = useAnalytics();
+  const telemetry = useTelemetry();
+  const notifications = useNotificationService();
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWaterLogging, setIsWaterLogging] = useState(false);
 
-  const fetchDashboardData = async (showLoading = false) => {
+  const fetchDashboardData = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
+    const start = performance.now();
 
     try {
       const response = await apiFetch(`${API_BASE_URL}/dashboard`);
@@ -59,18 +75,53 @@ export const Dashboard: React.FC = () => {
       }
 
       const result = await response.json();
+      const durationMs = Math.round(performance.now() - start);
+      telemetry.recordLatency('API_LATENCY', 'Dashboard', durationMs, { status: response.status });
+
       setData(result);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Error occurred.');
+    } catch (err: unknown) {
+      const normErr = normalizeError(err);
+      setError(getUserSafeMessage(normErr));
+      logger.error('[Dashboard] Fetch dashboard error', { error: normErr.message, code: normErr.code });
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiFetch, telemetry]);
 
   useEffect(() => {
     fetchDashboardData(true);
-  }, []);
+    analytics.track('DASHBOARD_VIEWED');
+
+    // Subscribe to EventBus for cross-feature reactivity
+    const unsubWater = eventBus.subscribe('WATER_LOGGED', () => {
+      fetchDashboardData(false);
+    });
+    const unsubMeal = eventBus.subscribe('MEAL_LOGGED', () => {
+      fetchDashboardData(false);
+    });
+    const unsubWorkout = eventBus.subscribe('WORKOUT_COMPLETED', () => {
+      fetchDashboardData(false);
+    });
+    const unsubProfile = eventBus.subscribe('PROFILE_UPDATED', () => {
+      fetchDashboardData(false);
+    });
+    const unsubOnline = eventBus.subscribe('NETWORK_ONLINE', () => {
+      fetchDashboardData(false);
+    });
+    const unsubSync = eventBus.subscribe('SYNC_COMPLETED', () => {
+      fetchDashboardData(false);
+    });
+
+    return () => {
+      unsubWater();
+      unsubMeal();
+      unsubWorkout();
+      unsubProfile();
+      unsubOnline();
+      unsubSync();
+    };
+  }, [fetchDashboardData, analytics, eventBus]);
 
   const handleQuickLogWater = async (amountMl: number) => {
     setIsWaterLogging(true);
@@ -88,10 +139,26 @@ export const Dashboard: React.FC = () => {
       if (response.status === 401 || response.status === 403) return;
 
       if (response.ok) {
+        const newTotal = (data?.water_consumed_ml || 0) + amountMl;
+        eventBus.emit('WATER_LOGGED', {
+          amountMl,
+          dailyTotalMl: newTotal,
+          timestamp: Date.now(),
+        });
+
+        analytics.track('WATER_LOGGED', { amountMl, dailyTotalMl: newTotal });
+
+        notifications.notify({
+          type: 'nutrition',
+          title: 'Hydration Logged',
+          message: `Added ${amountMl}ml of water to today's intake.`,
+          durationMs: 3500,
+        });
+
         await fetchDashboardData(false);
       }
     } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to log water:", err);
+      logger.error('[Dashboard] Failed to log water', { error: err instanceof Error ? err.message : String(err) });
     } finally {
       setIsWaterLogging(false);
     }
@@ -100,10 +167,26 @@ export const Dashboard: React.FC = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-[60vh]">
-          <div className="animate-pulse flex flex-col items-center gap-4">
-            <div className="w-12 h-12 rounded-full border-4 border-neonLime border-t-transparent animate-spin"></div>
-            <p className="text-zinc-500 font-semibold uppercase tracking-wider text-xs">Assembling Dashboard Data</p>
+        <div className="space-y-8 animate-pulse">
+          {/* Skeleton Welcome */}
+          <div className="space-y-3">
+            <div className="h-10 bg-zinc-800/60 rounded-xl w-72"></div>
+            <div className="h-4 bg-zinc-800/40 rounded-lg w-96"></div>
+          </div>
+
+          {/* Skeleton 3 Columns */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="h-64 bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-6"></div>
+            <div className="h-64 bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-6"></div>
+            <div className="h-64 bg-zinc-900/60 border border-zinc-800/60 rounded-2xl p-6"></div>
+          </div>
+
+          {/* Skeleton Macro Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="h-32 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl"></div>
+            <div className="h-32 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl"></div>
+            <div className="h-32 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl"></div>
+            <div className="h-32 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl"></div>
           </div>
         </div>
       </Layout>
@@ -113,19 +196,23 @@ export const Dashboard: React.FC = () => {
   if (error || !data) {
     return (
       <Layout>
-        <div className="p-6 bg-red-950/40 border border-red-800/40 rounded-2xl max-w-xl mx-auto mt-10">
-          <h2 className="font-bold text-red-300 text-lg mb-2">Error Loading Dashboard</h2>
-          <p className="text-red-200 text-sm mb-4">{error || "Please set up your profile to access dashboard calculations."}</p>
-          <div className="flex gap-3">
+        <div className="p-8 bg-red-950/30 border border-red-800/40 rounded-3xl max-w-xl mx-auto mt-10 backdrop-blur-xl shadow-2xl text-center">
+          <div className="w-14 h-14 rounded-2xl bg-red-900/40 border border-red-700/50 flex items-center justify-center text-red-400 mx-auto mb-4 shadow-inner">
+            <AlertTriangle className="w-7 h-7" />
+          </div>
+          <h2 className="font-extrabold text-white text-xl mb-2 tracking-tight">Unable to Load Dashboard</h2>
+          <p className="text-zinc-400 text-sm mb-6 leading-relaxed">{error || "Please set up your profile to access dashboard calculations."}</p>
+          <div className="flex justify-center gap-3">
             <button
               onClick={() => fetchDashboardData(true)}
-              className="inline-flex items-center gap-2 py-2.5 px-5 bg-zinc-900 border border-zinc-800 text-slate-100 font-bold rounded-xl text-xs uppercase tracking-wide hover:border-neonLime/50 transition-all"
+              className="inline-flex items-center gap-2 py-3 px-6 bg-gradient-to-r from-neonLime to-emerald-400 text-zinc-950 font-black rounded-xl text-xs uppercase tracking-wider hover:opacity-90 transition-all shadow-lg shadow-neonLime/20 cursor-pointer"
             >
+              <RefreshCw className="w-4 h-4" />
               Retry
             </button>
-            <a href="/profile-setup" className="inline-block py-2.5 px-5 bg-zinc-900 border border-zinc-800 text-slate-100 font-bold rounded-xl text-xs uppercase tracking-wide">
+            <Link to="/profile-setup" className="inline-flex items-center gap-2 py-3 px-6 bg-zinc-900 border border-zinc-800 text-zinc-200 font-bold rounded-xl text-xs uppercase tracking-wider hover:border-zinc-700 transition-all">
               Go to Profile Setup
-            </a>
+            </Link>
           </div>
         </div>
       </Layout>

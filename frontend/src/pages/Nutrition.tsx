@@ -2,6 +2,12 @@ import { API_BASE_URL } from "../config";
 import { useAuth } from "../context/AuthContext";
 import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
+import {
+  useEventBus,
+  useNotificationService,
+  useAnalytics,
+} from '../platform/container/PlatformContext.tsx';
+import { logger } from '../utils/logger.ts';
 import { 
   Plus, 
   Trash2, 
@@ -43,6 +49,10 @@ interface WaterLog {
 
 export const Nutrition: React.FC = () => {
   const { apiFetch } = useAuth();
+  const eventBus = useEventBus();
+  const notifications = useNotificationService();
+  const analytics = useAnalytics();
+
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toLocaleDateString('sv'));
   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   const [waterLogs, setWaterLogs] = useState<WaterLog[]>([]);
@@ -132,6 +142,10 @@ export const Nutrition: React.FC = () => {
 
   const handleLogFood = async (foodId: string) => {
     setModalError(null);
+    const foodToLog = (selectedFood && selectedFood.food_id === foodId)
+      ? selectedFood
+      : searchResults.find(f => f.food_id === foodId);
+
     try {
       const response = await apiFetch(`${API_BASE_URL}/logs/nutrition`, {
         method: 'POST',
@@ -156,8 +170,35 @@ export const Nutrition: React.FC = () => {
       setSearchResults([]);
       setServingsToLog(1.0);
       fetchLogs();
-    } catch (err: any) {
-      setModalError(err.message);
+
+      if (foodToLog) {
+        eventBus.emit('MEAL_LOGGED', {
+          mealId: foodId,
+          mealType: activeMealSection,
+          calories: Math.round(foodToLog.calories * servingsToLog),
+          proteinGrams: Math.round(foodToLog.protein * servingsToLog),
+          carbsGrams: Math.round(foodToLog.carbohydrates * servingsToLog),
+          fatGrams: Math.round(foodToLog.fat * servingsToLog),
+          timestamp: Date.now(),
+        });
+
+        analytics.track('MEAL_LOGGED', {
+          foodName: foodToLog.name,
+          mealType: activeMealSection,
+          calories: Math.round(foodToLog.calories * servingsToLog),
+        });
+
+        notifications.notify({
+          type: 'nutrition',
+          title: 'Food Logged',
+          message: `Added ${foodToLog.name} to ${activeMealSection}.`,
+          durationMs: 3500,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to log food';
+      setModalError(msg);
+      logger.error('[Nutrition] Log food error', { error: msg });
     }
   };
 
@@ -195,8 +236,10 @@ export const Nutrition: React.FC = () => {
       setCustomServingSize(100); setCustomServingUnit('g');
       setCustomCalories(0); setCustomProtein(0); setCustomCarbs(0); setCustomFat(0);
       setShowCustomCreator(false);
-    } catch (err: any) {
-      setModalError(err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to create food';
+      setModalError(msg);
+      logger.error('[Nutrition] Create custom food error', { error: msg });
     }
   };
 
@@ -204,9 +247,18 @@ export const Nutrition: React.FC = () => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/logs/nutrition/${logId}`, { method: 'DELETE' });
       if (response.status === 401 || response.status === 403) return;
-      if (response.ok) fetchLogs();
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to delete log:", err);
+      if (response.ok) {
+        fetchLogs();
+        notifications.notify({
+          type: 'info',
+          title: 'Food Log Removed',
+          message: 'Entry successfully deleted.',
+          durationMs: 2500,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete log';
+      logger.error('[Nutrition] Failed to delete log', { error: msg });
     }
   };
 
@@ -221,9 +273,29 @@ export const Nutrition: React.FC = () => {
         body: JSON.stringify({ amount_ml: waterInput, logged_date: selectedDate })
       });
       if (response.status === 401 || response.status === 403) return;
-      if (response.ok) { setWaterInput(250); fetchLogs(); }
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Error logging water:", err);
+      if (response.ok) {
+        const loggedAmount = waterInput;
+        const currentDailyTotal = waterLogs.reduce((sum, log) => sum + log.amount_ml, 0) + loggedAmount;
+        setWaterInput(250);
+        fetchLogs();
+
+        // Platform integration: EventBus, Analytics, Notifications
+        eventBus.emit('WATER_LOGGED', {
+          amountMl: loggedAmount,
+          dailyTotalMl: currentDailyTotal,
+          timestamp: Date.now(),
+        });
+        analytics.track('WATER_LOGGED', { amountMl: loggedAmount, dailyTotalMl: currentDailyTotal });
+        notifications.notify({
+          type: 'nutrition',
+          title: 'Hydration Logged',
+          message: `Logged ${loggedAmount}ml of water. Keep going!`,
+          durationMs: 3000,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error logging water';
+      logger.error('[Nutrition] Error logging water', { error: msg });
     } finally {
       setIsWaterLogging(false);
     }
@@ -233,9 +305,18 @@ export const Nutrition: React.FC = () => {
     try {
       const response = await apiFetch(`${API_BASE_URL}/logs/water/${waterLogId}`, { method: 'DELETE' });
       if (response.status === 401 || response.status === 403) return;
-      if (response.ok) fetchLogs();
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("Failed to delete water log:", err);
+      if (response.ok) {
+        fetchLogs();
+        notifications.notify({
+          type: 'info',
+          title: 'Hydration Entry Removed',
+          message: 'Water log deleted.',
+          durationMs: 2500,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete water log';
+      logger.error('[Nutrition] Failed to delete water log', { error: msg });
     }
   };
 

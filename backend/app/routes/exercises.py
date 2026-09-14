@@ -48,6 +48,31 @@ def get_muscle_groups(db: Session = Depends(get_db)):
     """
     return db.query(MuscleGroup).order_by(MuscleGroup.name).all()
 
+@router.get("/personal-records", response_model=List[PersonalRecordResponse])
+def get_personal_records(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all personal records achieved by the current user.
+    """
+    records = db.query(PersonalRecord).filter(
+        PersonalRecord.user_id == current_user.id
+    ).all()
+    return [
+        {
+            "id": pr.id,
+            "user_id": pr.user_id,
+            "exercise_id": pr.exercise_id,
+            "best_weight": pr.best_weight,
+            "best_volume": pr.best_volume,
+            "best_estimated_1rm": pr.best_estimated_1rm,
+            "record_date": pr.record_date,
+            "exercise_name": pr.exercise.name if pr.exercise else None,
+        }
+        for pr in records
+    ]
+
 @router.get("", response_model=List[ExerciseResponse])
 def get_exercises(
     query: Optional[str] = Query(None),

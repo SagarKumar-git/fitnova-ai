@@ -97,7 +97,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => {
                 const nextState = !isCollapsed;
                 setIsCollapsed(nextState);
-                localStorage.setItem('sidebar-collapsed', JSON.stringify(nextState));
+                try {
+                  localStorage.setItem('sidebar-collapsed', JSON.stringify(nextState));
+                } catch {
+                  // Fallback safe
+                }
               }}
               className="hidden lg:flex p-1.5 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer"
               aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}

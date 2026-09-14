@@ -17,11 +17,20 @@ import { AIInsights } from './pages/AIInsights';
 import { FoodAIScanner } from './pages/FoodAIScanner';
 import { LandingPage } from './pages/LandingPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { WorkoutProvider } from './features/workout/state/WorkoutContext';
+import {
+  WorkoutHome,
+  WorkoutDetails,
+  ActiveWorkout,
+  WorkoutHistory,
+  WorkoutStats,
+} from './features/workout/pages';
 
 function App() {
   return (
     <Router>
       <AuthProvider>
+        <WorkoutProvider>
         <Routes>
           {/* Public Landing Page Route */}
           <Route path="/" element={<LandingPage />} />
@@ -87,21 +96,67 @@ function App() {
             } 
           />
 
-          {/* Protected Phase 3 Workout Pages */}
+          {/* Workout OS Sprint 3.2 Routes */}
           <Route 
             path="/workouts" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <WorkoutDiary />
+                <WorkoutHome />
               </ProtectedRoute>
             } 
           />
 
           <Route 
+            path="/workouts/active" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <ActiveWorkout />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/workouts/history" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <WorkoutHistory />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/workouts/stats" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <WorkoutStats />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/workouts/:id" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <WorkoutDetails />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Preserved Previous Workout Routes */}
+          <Route 
             path="/workouts/templates" 
             element={
               <ProtectedRoute requireProfile={true}>
                 <WorkoutTemplates />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/workouts/diary" 
+            element={
+              <ProtectedRoute requireProfile={true}>
+                <WorkoutDiary />
               </ProtectedRoute>
             } 
           />
@@ -151,7 +206,6 @@ function App() {
             } 
           />
 
-          
           {/* Catch-all Route: send authenticated users to dashboard, others to login */}
           <Route 
             path="*" 
@@ -162,6 +216,7 @@ function App() {
             } 
           />
         </Routes>
+        </WorkoutProvider>
       </AuthProvider>
     </Router>
   );
