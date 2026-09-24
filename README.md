@@ -4,9 +4,21 @@ A Full-Stack Fitness & Nutrition Platform built using FastAPI, React, TypeScript
 
 # Features
 
-# Phase 1 - User Foundation
-- JWT Authentication
-- User Registration & Login
+# Phase 1 - User Foundation & Modern Auth UI
+- **JWT Authentication**: Secure stateless token authentication with session expiration handling
+- **User Registration & Login**: Streamlined onboarding with athlete, trainer, and admin role routing
+- **Modern Interactive Auth UI Overhaul**:
+  - **Dark Navy & Neon Green/Yellow Visual System**: Deep obsidian navy (`#020817` / `#04111F`) paired with electric neon green (`#39FF14`) and energetic cyber yellow (`#DFFF00`)
+  - **Interactive Animated Biometric / ECG Background**: Real-time HTML5 canvas rendering animated pulse ECG waves, drifting fitness nodes, and cursor-reactive particles
+  - **Cursor-Following Glow**: Desktop ambient radial follower trailing pointer movement with smooth physics-based easing
+  - **Click Ripple & Energy Effects**: Dynamic neon radial shockwave animations expanding on user clicks
+  - **Glassmorphism Authentication Card**: High-depth backdrop-blur card featuring layered box shadows and error-triggered shake animations
+  - **Neon Green/Yellow Input Focus States**: Interactive input fields with glowing icon accents, focus rings, and high-contrast labels
+  - **Animated Gradient Sign In Button**: High-impact button with continuous shimmer sheen sweeps, hover lifts, and scale down on press
+  - **Login Loading & Success States**: Multi-state submit buttons featuring spinner animations, success checkmarks, and instant transition routing
+  - **Register Page Visual Updates**: Unified neon theme across account creation, role selection dropdowns, and password validation
+  - **Responsive Authentication UI**: Mobile-first design optimized for mobile viewports, tablets, and desktop displays
+  - **Reduced-Motion Accessibility Support**: Comprehensive `prefers-reduced-motion: reduce` media query support disabling intense visual animations
 - Profile Setup
 - BMR Calculation
 - TDEE Calculation
@@ -66,9 +78,12 @@ FitNova AI
 │   └── services
 ├── frontend
 │   ├── src
-│   ├── pages
-│   ├── components
-│   └── assets
+│   │   ├── components
+│   │   │   └── auth        # Interactive Auth UI (Card, Input, Button, Background, Glow)
+│   │   ├── tokens          # Design tokens & FitNova color system
+│   │   ├── pages           # Login, Register, Dashboard, etc.
+│   │   ├── features        # Workout, Nutrition, Health, Analytics
+│   │   └── assets
 └── docker-compose.yml
 ```
 
