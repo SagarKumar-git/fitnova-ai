@@ -1,45 +1,191 @@
-
 @import "tailwindcss";
 
 @theme {
-  --color-background: #010C26;
+  --color-background: #020817;
   --color-foreground: #FFFFFF;
   
-  --color-card: #03194D;
+  --color-card: #04111F;
   --color-card-foreground: #FFFFFF;
   
-  --color-popover: #03194D;
+  --color-popover: #04111F;
   --color-popover-foreground: #FFFFFF;
   
-  --color-primary: #3B7BFF;
-  --color-primary-foreground: #FFFFFF;
+  --color-primary: #39FF14;
+  --color-primary-foreground: #020817;
   
-  --color-secondary: #072A80;
+  --color-secondary: #06101F;
   --color-secondary-foreground: #F8F9FA;
   
-  --color-muted: #121417;
-  --color-muted-foreground: #ADB5BD;
+  --color-muted: #04111F;
+  --color-muted-foreground: #94A3B8;
   
-  --color-accent: #D442FF;
-  --color-accent-foreground: #FFFFFF;
+  --color-accent: #A8FF00;
+  --color-accent-foreground: #020817;
   
   --color-destructive: #F43F5E;
   --color-destructive-foreground: #FFFFFF;
   
-  --color-border: #121417;
-  --color-input: #121417;
-  --color-ring: #D442FF;
-  
+  --color-border: rgba(163, 255, 0, 0.18);
+  --color-input: #04111F;
+  --color-ring: #39FF14;
+
+  /* Custom FitNova Identity */
+  --color-darkBg: #020817;
+  --color-darkBgElevated: #04111F;
+  --color-darkBgDeep: #06101F;
+  --color-neonGreen: #39FF14;
+  --color-neonLime: #A8FF00;
+  --color-neonYellow: #DFFF00;
+  --color-neonCyan: #A8FF00;
+
   --radius-sm: 0.375rem;
   --radius-md: 0.75rem;
-  --radius-lg: 1.5rem;
+  --radius-lg: 1.375rem;
   --radius-full: 9999px;
+}
+
+:root {
+  --fitnova-bg: #020817;
+  --fitnova-bg-elevated: #04111F;
+  --fitnova-bg-deep: #06101F;
+  --fitnova-surface: rgba(5, 15, 30, 0.72);
+  --fitnova-green: #39FF14;
+  --fitnova-lime: #A8FF00;
+  --fitnova-yellow: #DFFF00;
+  --fitnova-border: rgba(163, 255, 0, 0.18);
+  --fitnova-border-hover: rgba(163, 255, 0, 0.40);
+  --fitnova-border-focus: #39FF14;
+  --fitnova-glow: 0 0 25px rgba(57, 255, 20, 0.25);
+  --fitnova-text: #FFFFFF;
+  --fitnova-text-muted: #94A3B8;
 }
 
 @layer base {
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-family: 'Inter', sans-serif;
+    background-color: var(--fitnova-bg);
+    color: var(--fitnova-text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Glassmorphism Panel */
+.glass-panel {
+  background: var(--fitnova-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--fitnova-border);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 35px rgba(57, 255, 20, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+}
+
+/* Neon Glow Utilities */
+.neon-glow-lime {
+  box-shadow: 0 0 20px rgba(168, 255, 0, 0.35);
+}
+
+.neon-glow-green {
+  box-shadow: 0 0 25px rgba(57, 255, 20, 0.4);
+}
+
+.neon-border-glow {
+  box-shadow: 0 0 0 3px rgba(57, 255, 20, 0.08), 0 0 20px rgba(57, 255, 20, 0.12);
+}
+
+/* Heartbeat pulse micro-animation */
+@keyframes heartbeat-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(57, 255, 20, 0.4));
+  }
+  14% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 12px rgba(57, 255, 20, 0.8));
+  }
+  28% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 5px rgba(57, 255, 20, 0.4));
+  }
+  42% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 10px rgba(168, 255, 0, 0.7));
+  }
+  70% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(57, 255, 20, 0.4));
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeat-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Button Shimmer Sheen */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  50%, 100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+.btn-shimmer-sweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: shimmer-sweep 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Error Shake */
+@keyframes card-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.animate-shake {
+  animation: card-shake 0.45s ease-in-out;
+}
+
+/* Subtle Click Ripple */
+@keyframes ripple-scale {
+  0% {
+    transform: translate(-50%, -50%) scale(0.1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.8);
+    opacity: 0;
+  }
+}
+
+.click-ripple-circle {
+  position: fixed;
+  border-radius: 9999px;
+  pointer-events: none;
+  border: 1.5px solid #39FF14;
+  background: radial-gradient(circle, rgba(223, 255, 0, 0.25) 0%, rgba(57, 255, 20, 0.08) 50%, transparent 80%);
+  box-shadow: 0 0 15px rgba(57, 255, 20, 0.6);
+  animation: ripple-scale 0.7s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  z-index: 9999;
+}
+
+/* Respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-heartbeat,
+  .btn-shimmer-sweep,
+  .animate-shake,
+  .click-ripple-circle {
+    animation: none !important;
   }
 }
