@@ -183,6 +183,48 @@ def seed_achievements_database():
 # seed_food_database()
 # seed_exercise_database()
 
+def migrate_foods_schema():
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    try:
+        columns = [col['name'] for col in inspector.get_columns("foods")]
+        new_cols = [
+            ("common_name", "VARCHAR"),
+            ("aliases", "VARCHAR"),
+            ("category", "VARCHAR"),
+            ("cuisine", "VARCHAR"),
+            ("country_or_region", "VARCHAR"),
+            ("fiber", "FLOAT DEFAULT 0.0"),
+            ("sugar", "FLOAT DEFAULT 0.0"),
+            ("sodium", "FLOAT DEFAULT 0.0"),
+            ("saturated_fat", "FLOAT DEFAULT 0.0"),
+            ("cholesterol", "FLOAT DEFAULT 0.0"),
+            ("micronutrients", "JSON"),
+            ("ingredients", "VARCHAR"),
+            ("preparation_method", "VARCHAR"),
+            ("is_vegetarian", "BOOLEAN DEFAULT TRUE"),
+            ("is_vegan", "BOOLEAN DEFAULT FALSE"),
+            ("food_type", "VARCHAR"),
+            ("source", "VARCHAR DEFAULT 'fitnova_verified'"),
+            ("source_id", "VARCHAR"),
+            ("confidence_score", "FLOAT DEFAULT 1.0"),
+            ("updated_at", "TIMESTAMP"),
+        ]
+        with engine.connect() as conn:
+            transaction = conn.begin()
+            try:
+                for col_name, col_type in new_cols:
+                    if col_name not in columns:
+                        conn.execute(text(f"ALTER TABLE foods ADD COLUMN {col_name} {col_type}"))
+                transaction.commit()
+                print("Database migration check completed for foods.")
+            except Exception as inner_e:
+                transaction.rollback()
+                print(f"Inner migration transaction failed for foods: {inner_e}")
+                raise inner_e
+    except Exception as outer_e:
+        print(f"Failed to inspect or migrate foods: {outer_e}")
+
 def migrate_food_recognition_logs_schema():
     from sqlalchemy import inspect, text
     inspector = inspect(engine)
@@ -249,13 +291,14 @@ try:
     logger.info("Database schema tables verified and initialized successfully.")
     
     # Run auto-migration check for incremental columns
+    migrate_foods_schema()
     migrate_food_recognition_logs_schema()
     migrate_ai_meal_plans_schema()
 except Exception as e:
     logger.error(f"Error initializing database schema tables: {e}", exc_info=True)
 
 # Run seeders
-# seed_food_database()
+seed_food_database()
 # seed_exercise_database()
 seed_achievements_database()
 

@@ -230,3 +230,73 @@ class TestFoodScannerAI(unittest.TestCase):
             self.assertIn("verified database entry", scaled["recommendation"])
         finally:
             db.close()
+
+    def test_multi_food_pizza_burger_fries_tomato_scan(self):
+        """
+        Verifies that scanning an image with pizza, burger, fries, and tomato
+        returns structured multi-food results with separate detected items,
+        portion estimates, macros, confidence scores, and aggregate totals.
+        """
+        # Create an image containing golden, red, and brown pixel regions
+        img = Image.new("RGB", (200, 200), (240, 240, 240))
+        # Golden area (fries / burger bun / crust)
+        for x in range(10, 90):
+            for y in range(10, 90):
+                img.putpixel((x, y), (210, 160, 45))
+        # Red area (tomato / pizza sauce)
+        for x in range(110, 190):
+            for y in range(10, 90):
+                img.putpixel((x, y), (200, 35, 30))
+        # Brown area (burger patty)
+        for x in range(10, 90):
+            for y in range(110, 190):
+                img.putpixel((x, y), (85, 45, 25))
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        # 1. Test upload with keyword filename
+        files = {
+            "file": ("pizza_burger_fries_tomato.jpg", img_bytes, "image/jpeg")
+        }
+        res = self.client.post("/api/v1/ai/food-scan", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+
+        self.assertEqual(data["status"], "completed")
+        self.assertIn("foods", data)
+        foods = data["foods"]
+        self.assertGreaterEqual(len(foods), 4)
+
+        food_names = [f["name"].lower() for f in foods]
+        self.assertTrue(any("pizza" in n for n in food_names))
+        self.assertTrue(any("burger" in n for n in food_names))
+        self.assertTrue(any("fries" in n for n in food_names))
+        self.assertTrue(any("tomato" in n for n in food_names))
+
+        # Check that individual macros are present and greater than 0
+        for f in foods:
+            self.assertGreater(f["calories"], 0)
+            self.assertGreaterEqual(f["protein"], 0)
+            self.assertGreaterEqual(f["carbohydrates"], 0)
+            self.assertGreaterEqual(f["fat"], 0)
+            self.assertGreater(f["confidence"], 0)
+
+        # Check total nutrition corresponds to the sum of items
+        total_cal = sum(f["calories"] for f in foods)
+        self.assertAlmostEqual(data["calories"], total_cal, places=1)
+        self.assertIn("estimates", data["recommendation"].lower())
+
+        # 2. Test upload with completely generic camera filename (IMG_camera_dinner.jpg)
+        # to verify visual pixel analysis handles real image content
+        files_camera = {
+            "file": ("IMG_camera_dinner.jpg", img_bytes, "image/jpeg")
+        }
+        res2 = self.client.post("/api/v1/ai/food-scan?force_reanalyze=true", headers=self.headers, files=files_camera)
+        self.assertEqual(res2.status_code, 201)
+        data2 = res2.json()
+        self.assertEqual(data2["status"], "completed")
+        self.assertIn("foods", data2)
+        self.assertGreaterEqual(len(data2["foods"]), 4)
