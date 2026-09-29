@@ -150,3 +150,83 @@ class TestFoodScannerAI(unittest.TestCase):
         logged = res.json()
         self.assertEqual(logged["food_id"], food_id)
         self.assertEqual(logged["servings"], 1.5)
+
+    def test_generic_filename_fallback_no_failure(self):
+        """Verifies that an image with a random/camera filename does not cause a 500 error and returns structured data."""
+        img_bytes = self._create_dummy_image("JPEG")
+        files = {
+            "file": ("IMG_20260929_110023.jpg", img_bytes, "image/jpeg")
+        }
+        res = self.client.post("/api/v1/ai/food-scan", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertIsNotNone(data["meal_name"])
+        self.assertGreater(data["calories"], 0)
+        self.assertIn("foods", data)
+        self.assertGreaterEqual(len(data["foods"]), 1)
+        self.assertIn("estimates", data["recommendation"].lower())
+
+    def test_transparent_png_upload(self):
+        """Verifies transparent RGBA PNG images are processed cleanly without MIME or alpha crashes."""
+        img = Image.new("RGBA", (150, 150), (255, 0, 0, 128))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        png_bytes = buf.getvalue()
+
+        files = {
+            "file": ("plate_transparent.png", png_bytes, "image/png")
+        }
+        res = self.client.post("/api/v1/ai/food-scan", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data["status"], "completed")
+
+    def test_multi_food_database_scaling(self):
+        """Verifies that multiple food items on a plate are independently matched to DB and aggregated."""
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == "scanner@fitnova.ai").first()
+            self.assertIsNotNone(user)
+
+            raw_result = {
+                "meal_name": "Chicken and Rice Bowl",
+                "serving_size_estimation": "medium",
+                "estimated_weight_g": 350.0,
+                "confidence_score": 0.92,
+                "foods": [
+                    {
+                        "name": "Chicken Breast",
+                        "portion": "150g fillet",
+                        "estimated_weight_g": 150.0,
+                        "calories": 999.0, # Hallucinated - should be scaled from DB
+                        "protein": 1.0,
+                        "carbohydrates": 0.0,
+                        "fat": 0.0,
+                        "confidence": 0.95
+                    },
+                    {
+                        "name": "White Rice",
+                        "portion": "1 cup (150g)",
+                        "estimated_weight_g": 150.0,
+                        "calories": 888.0, # Hallucinated - should be scaled from DB
+                        "protein": 1.0,
+                        "carbohydrates": 0.0,
+                        "fat": 0.0,
+                        "confidence": 0.90
+                    }
+                ]
+            }
+
+            food_id, scaled = match_and_scale_nutrition(db, user.id, raw_result)
+            self.assertIsNotNone(food_id)
+            self.assertEqual(len(scaled["foods"]), 2)
+            # Verified items have is_database_match = True
+            for item in scaled["foods"]:
+                self.assertTrue(item["is_database_match"])
+            # Total calories must equal sum of scaled item calories
+            total_sum = sum(i["calories"] for i in scaled["foods"])
+            self.assertAlmostEqual(scaled["calories"], total_sum, places=1)
+            self.assertIn("verified database entry", scaled["recommendation"])
+        finally:
+            db.close()

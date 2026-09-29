@@ -750,6 +750,34 @@ class AIInsightResponse(BaseModel):
         from_attributes = True
 
 
+class DetectedFoodItem(BaseModel):
+    name: str
+    portion: Optional[str] = "1 serving"
+    estimated_weight_g: Optional[float] = None
+    calories: Optional[float] = 0.0
+    protein: Optional[float] = 0.0
+    carbohydrates: Optional[float] = 0.0
+    fat: Optional[float] = 0.0
+    confidence: Optional[float] = 0.85
+    food_id: Optional[uuid.UUID] = None
+    matched_food_name: Optional[str] = None
+    is_database_match: Optional[bool] = False
+    bounding_box: Optional[List[int]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TotalNutrition(BaseModel):
+    calories: float = 0.0
+    protein: float = 0.0
+    carbohydrates: float = 0.0
+    fat: float = 0.0
+
+    class Config:
+        from_attributes = True
+
+
 class FoodRecognitionCreate(BaseModel):
     food_name: str
     calories: float
@@ -787,6 +815,10 @@ class FoodRecognitionResponse(BaseModel):
     recommendation: Optional[str] = None
     healthier_alternative: Optional[str] = None
     annotations: Optional[List[Dict[str, Any]]] = None
+
+    # Multi-food structured details
+    foods: Optional[List[DetectedFoodItem]] = None
+    total_nutrition: Optional[TotalNutrition] = None
 
     class Config:
         from_attributes = True

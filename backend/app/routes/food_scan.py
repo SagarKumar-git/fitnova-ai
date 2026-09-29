@@ -193,17 +193,29 @@ def upload_scan(
             detail="Database save failed. Upload was rolled back."
         )
 
-    # 8. Run Synchronous processing boundary (Worker-ready)
+    # 8. Run Synchronous processing boundary (Worker-ready) with resilient fallback
     try:
         process_food_recognition_job(db, new_log.id, vision_provider, saved_path, file.filename)
         db.refresh(new_log)
     except Exception as proc_err:
-        logger.error(f"Image processing job failed: {proc_err}")
-        # Mark as failed in DB, but the file is kept for logs unless explicitly deleted
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Vision recognition processing failed."
-        )
+        logger.warning(f"Primary vision provider failed: {proc_err}. Initiating resilient fallback.")
+        if not isinstance(vision_provider, HeuristicVisionProvider):
+            try:
+                fallback_provider = HeuristicVisionProvider()
+                process_food_recognition_job(db, new_log.id, fallback_provider, saved_path, file.filename)
+                db.refresh(new_log)
+                logger.info("Resilient fallback succeeded using HeuristicVisionProvider.")
+            except Exception as fallback_err:
+                logger.error(f"Fallback vision processing also failed: {fallback_err}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Vision recognition processing failed. Please ensure the image is clear or log manually."
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Vision recognition processing failed. Please ensure the image is clear or log manually."
+            )
 
     logger.info(f"AUDIT: Food recognition completed for scan {new_log.id} by user {current_user.id}")
     return new_log

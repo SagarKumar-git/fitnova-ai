@@ -10,8 +10,25 @@ import {
   Sparkles, 
   CheckCircle,
   RefreshCw,
-  Clock
+  Clock,
+  Database,
+  Layers
 } from 'lucide-react';
+
+export interface DetectedFoodItem {
+  name: string;
+  portion?: string | null;
+  estimated_weight_g?: number | null;
+  calories: number;
+  protein: number;
+  carbohydrates: number;
+  fat: number;
+  confidence: number;
+  food_id?: string | null;
+  matched_food_name?: string | null;
+  is_database_match?: boolean;
+  bounding_box?: [number, number, number, number] | null;
+}
 
 interface FoodScanLog {
   id: string;
@@ -48,6 +65,15 @@ interface FoodScanLog {
     confidence: number;
     bounding_box: [number, number, number, number];
   }> | null;
+
+  // Multi-food structured fields
+  foods?: DetectedFoodItem[] | null;
+  total_nutrition?: {
+    calories: number;
+    protein: number;
+    carbohydrates: number;
+    fat: number;
+  } | null;
 }
 
 interface ScanStats {
@@ -76,6 +102,8 @@ export const FoodAIScanner: React.FC = () => {
   
   // Selected prediction for review/logging
   const [activeScan, setActiveScan] = useState<FoodScanLog | null>(null);
+  const [detectedFoods, setDetectedFoods] = useState<DetectedFoodItem[]>([]);
+  const [newItemName, setNewItemName] = useState<string>('');
   
   // Edited values state
   const [editedName, setEditedName] = useState<string>('');
@@ -96,6 +124,101 @@ export const FoodAIScanner: React.FC = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const mealTypes = ['Breakfast', 'Pre Workout', 'Post Workout', 'Lunch', 'Dinner', 'Snack'];
+
+  const parseFoodsFromScan = (scan: FoodScanLog): DetectedFoodItem[] => {
+    if (scan.foods && scan.foods.length > 0) {
+      return scan.foods;
+    }
+    if (scan.annotations && scan.annotations.length > 0) {
+      const annFoods = scan.annotations
+        .filter((a: any) => a && typeof a === 'object' && a.name)
+        .map((a: any) => ({
+          name: a.name,
+          portion: a.portion || "1 serving",
+          estimated_weight_g: a.estimated_weight_g || 100,
+          calories: a.calories || 0,
+          protein: a.protein || 0,
+          carbohydrates: a.carbohydrates || 0,
+          fat: a.fat || 0,
+          confidence: a.confidence || 0.85,
+          food_id: a.food_id || null,
+          matched_food_name: a.matched_food_name || null,
+          is_database_match: Boolean(a.is_database_match),
+          bounding_box: a.bounding_box || null
+        }));
+      if (annFoods.length > 0) return annFoods;
+    }
+    if (scan.detected_items && scan.detected_items.length > 0) {
+      const count = scan.detected_items.length;
+      return scan.detected_items.map((name) => ({
+        name,
+        portion: scan.serving_size_estimation || "1 serving",
+        estimated_weight_g: Math.round((scan.estimated_weight_g || 350) / count),
+        calories: Math.round((scan.calories || 0) / count),
+        protein: Math.round((scan.protein || 0) / count),
+        carbohydrates: Math.round((scan.carbohydrates || 0) / count),
+        fat: Math.round((scan.fat || 0) / count),
+        confidence: (scan.confidence_per_item && scan.confidence_per_item[name]) || scan.confidence_score || 0.85,
+        food_id: scan.food_id || null,
+        is_database_match: Boolean(scan.food_id)
+      }));
+    }
+    return [{
+      name: scan.meal_name || scan.food_name || 'Scanned Meal',
+      portion: scan.serving_size_estimation || "1 serving",
+      estimated_weight_g: scan.estimated_weight_g || 350,
+      calories: Math.round(scan.calories || 0),
+      protein: Math.round(scan.protein || 0),
+      carbohydrates: Math.round(scan.carbohydrates || 0),
+      fat: Math.round(scan.fat || 0),
+      confidence: scan.confidence_score || 0.85,
+      food_id: scan.food_id || null,
+      is_database_match: Boolean(scan.food_id)
+    }];
+  };
+
+  const recalculateTotals = (items: DetectedFoodItem[]) => {
+    const totCal = items.reduce((acc, curr) => acc + (curr.calories || 0), 0);
+    const totPro = items.reduce((acc, curr) => acc + (curr.protein || 0), 0);
+    const totCarb = items.reduce((acc, curr) => acc + (curr.carbohydrates || 0), 0);
+    const totFat = items.reduce((acc, curr) => acc + (curr.fat || 0), 0);
+    setEditedCalories(Math.round(totCal));
+    setEditedProtein(Math.round(totPro));
+    setEditedCarbs(Math.round(totCarb));
+    setEditedFat(Math.round(totFat));
+  };
+
+  const handleUpdateItem = (index: number, updated: Partial<DetectedFoodItem>) => {
+    const next = [...detectedFoods];
+    next[index] = { ...next[index], ...updated };
+    setDetectedFoods(next);
+    recalculateTotals(next);
+  };
+
+  const handleDeleteItem = (index: number) => {
+    const next = detectedFoods.filter((_, i) => i !== index);
+    setDetectedFoods(next);
+    recalculateTotals(next);
+  };
+
+  const handleAddItem = () => {
+    if (!newItemName.trim()) return;
+    const newItem: DetectedFoodItem = {
+      name: newItemName.trim(),
+      portion: "1 serving (100g)",
+      estimated_weight_g: 100,
+      calories: 120,
+      protein: 5,
+      carbohydrates: 20,
+      fat: 2,
+      confidence: 1.0,
+      is_database_match: false
+    };
+    const next = [...detectedFoods, newItem];
+    setDetectedFoods(next);
+    recalculateTotals(next);
+    setNewItemName('');
+  };
 
   // Helper to map backend image paths to full URLs
   const getImageUrl = (path: string) => {
@@ -204,15 +327,17 @@ export const FoodAIScanner: React.FC = () => {
       }
 
       const scanResult: FoodScanLog = await response.json();
+      const foods = parseFoodsFromScan(scanResult);
       
       // Select scan for review
       setActiveScan(scanResult);
+      setDetectedFoods(foods);
       setEditedName(scanResult.meal_name || scanResult.food_name || 'Unknown Meal');
       setEditedCalories(Math.round(scanResult.calories || 0));
       setEditedProtein(Math.round(scanResult.protein || 0));
       setEditedCarbs(Math.round(scanResult.carbohydrates || 0));
       setEditedFat(Math.round(scanResult.fat || 0));
-      setConfidence(scanResult.confidence_score || 0.30);
+      setConfidence(scanResult.confidence_score || 0.85);
       
       // Refresh timeline/stats
       await Promise.all([fetchStats(), fetchHistory()]);
@@ -323,13 +448,15 @@ export const FoodAIScanner: React.FC = () => {
   };
 
   const selectScanFromHistory = (scan: FoodScanLog) => {
+    const foods = parseFoodsFromScan(scan);
     setActiveScan(scan);
+    setDetectedFoods(foods);
     setEditedName(scan.meal_name || scan.food_name || 'Unknown Meal');
     setEditedCalories(Math.round(scan.calories || 0));
     setEditedProtein(Math.round(scan.protein || 0));
     setEditedCarbs(Math.round(scan.carbohydrates || 0));
     setEditedFat(Math.round(scan.fat || 0));
-    setConfidence(scan.confidence_score || 0.30);
+    setConfidence(scan.confidence_score || 0.85);
     setLogSuccess(false);
     setError(null);
   };
@@ -744,6 +871,116 @@ export const FoodAIScanner: React.FC = () => {
                         <span className="block text-xs font-bold text-orange-400 mt-1">
                           {Math.round(((editedFat * servings) / 65) * 100)}%
                         </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Detected Multi-Food Items Breakdown */}
+                  <div className="pt-2 border-t border-zinc-900">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-neonLime" />
+                        <span className="text-[11px] text-slate-200 font-extrabold uppercase tracking-wider">
+                          Detected Plate Items ({detectedFoods.length})
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-zinc-500 font-mono">
+                        Portion Scaled & DB Cross-Referenced
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 mb-3">
+                      {detectedFoods.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 bg-zinc-950/40 rounded-xl border border-zinc-900/80 hover:border-zinc-800 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-xs text-slate-100 truncate">{item.name}</span>
+                              {item.is_database_match ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[8px] font-bold uppercase border border-emerald-500/20">
+                                  <Database className="w-2.5 h-2.5" /> Verified DB
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neonCyan/10 text-neonCyan text-[8px] font-bold uppercase border border-neonCyan/20">
+                                  <Sparkles className="w-2.5 h-2.5" /> AI Estimate
+                                </span>
+                              )}
+                              <span className="text-[9px] text-zinc-400 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800">
+                                {item.portion || `${Math.round(item.estimated_weight_g || 100)}g`}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-zinc-400 font-mono">
+                              <span className="text-slate-200 font-semibold">{Math.round(item.calories)} kcal</span>
+                              <span>•</span>
+                              <span className="text-neonCyan font-semibold">{Math.round(item.protein)}g P</span>
+                              <span>•</span>
+                              <span className="text-slate-300 font-semibold">{Math.round(item.carbohydrates)}g C</span>
+                              <span>•</span>
+                              <span className="text-orange-400 font-semibold">{Math.round(item.fat)}g F</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1 bg-zinc-900 px-2 py-1 rounded-lg border border-zinc-800">
+                              <span className="text-[9px] text-zinc-400 font-bold uppercase">Weight:</span>
+                              <input
+                                type="number"
+                                value={Math.round(item.estimated_weight_g || 100)}
+                                onChange={(e) => {
+                                  const newWeight = Math.max(10, parseFloat(e.target.value) || 10);
+                                  const curWeight = item.estimated_weight_g || 100;
+                                  const ratio = curWeight > 0 ? newWeight / curWeight : 1.0;
+                                  handleUpdateItem(idx, {
+                                    estimated_weight_g: newWeight,
+                                    portion: `${Math.round(newWeight)}g`,
+                                    calories: Math.round(item.calories * ratio),
+                                    protein: Math.round(item.protein * ratio),
+                                    carbohydrates: Math.round(item.carbohydrates * ratio),
+                                    fat: Math.round(item.fat * ratio),
+                                  });
+                                }}
+                                className="w-12 bg-transparent text-slate-100 text-xs font-mono font-bold text-center focus:outline-none"
+                              />
+                              <span className="text-[9px] text-zinc-400 font-mono">g</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(idx)}
+                              className="p-1.5 text-zinc-650 hover:text-red-400 hover:bg-red-950/20 rounded-lg transition-colors"
+                              title="Remove food item"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add missing food item input */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          placeholder="Add missing ingredient (e.g. Olive Oil, Curd)..."
+                          value={newItemName}
+                          onChange={(e) => setNewItemName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddItem();
+                            }
+                          }}
+                          className="flex-1 px-3 py-1.5 bg-zinc-950/60 border border-zinc-900 rounded-lg text-slate-200 text-xs placeholder:text-zinc-600 focus:outline-none focus:border-neonLime"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddItem}
+                          className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-neonLime text-xs font-bold rounded-lg transition-all flex items-center gap-1 shrink-0"
+                        >
+                          <Plus className="w-3 h-3" /> Add
+                        </button>
                       </div>
                     </div>
                   </div>

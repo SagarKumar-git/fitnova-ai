@@ -3,11 +3,21 @@ import httpx
 from typing import Tuple, Optional, Any
 from app.config import settings
 
-GEMINI_MODELS = [
-    "gemini-2.5-flash",
+DEFAULT_GEMINI_MODELS = [
     "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
 ]
+
+def get_candidate_models() -> list[str]:
+    configured = getattr(settings, "GEMINI_MODEL", None)
+    models = []
+    if configured and configured.strip():
+        models.append(configured.strip())
+    for m in DEFAULT_GEMINI_MODELS:
+        if m not in models:
+            models.append(m)
+    return models
 
 def call_gemini_api(
     prompt: str,
@@ -53,7 +63,8 @@ def call_gemini_api(
             "responseMimeType": "application/json"
         }
 
-    for model_name in GEMINI_MODELS:
+    candidate_models = get_candidate_models()
+    for model_name in candidate_models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         try:
             with httpx.Client(timeout=20.0) as client:

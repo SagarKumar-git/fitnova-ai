@@ -528,6 +528,70 @@ class FoodRecognitionLog(Base):
     user = relationship("User", back_populates="food_recognition_logs")
     food = relationship("Food")
 
+    @property
+    def foods(self):
+        # 1. Check if detailed food breakdown was stored in annotations
+        if self.annotations and isinstance(self.annotations, list):
+            items = [
+                ann for ann in self.annotations
+                if isinstance(ann, dict) and "name" in ann and "calories" in ann
+            ]
+            if items:
+                return items
+
+        # 2. Check if detected_items contains list of strings, synthesize breakdown
+        if self.detected_items and isinstance(self.detected_items, list) and len(self.detected_items) > 0:
+            count = len(self.detected_items)
+            items = []
+            for name in self.detected_items:
+                conf = 0.85
+                if isinstance(self.confidence_per_item, dict):
+                    conf = float(self.confidence_per_item.get(name, 0.85))
+                elif self.confidence_score:
+                    conf = float(self.confidence_score)
+
+                items.append({
+                    "name": name,
+                    "portion": self.serving_size_estimation or "1 serving",
+                    "estimated_weight_g": round((self.estimated_weight_g or 350.0) / count, 1) if self.estimated_weight_g else 100.0,
+                    "calories": round((self.calories or 0.0) / count, 1),
+                    "protein": round((self.protein or 0.0) / count, 1),
+                    "carbohydrates": round((self.carbohydrates or 0.0) / count, 1),
+                    "fat": round((self.fat or 0.0) / count, 1),
+                    "confidence": conf,
+                    "food_id": self.food_id,
+                    "matched_food_name": self.food.name if self.food else None,
+                    "is_database_match": self.food_id is not None
+                })
+            return items
+
+        # 3. Fallback to top-level single food
+        if self.food_name:
+            return [{
+                "name": self.food_name,
+                "portion": self.serving_size_estimation or "1 serving",
+                "estimated_weight_g": self.estimated_weight_g or 100.0,
+                "calories": float(self.calories or 0.0),
+                "protein": float(self.protein or 0.0),
+                "carbohydrates": float(self.carbohydrates or 0.0),
+                "fat": float(self.fat or 0.0),
+                "confidence": float(self.confidence_score or 0.85),
+                "food_id": self.food_id,
+                "matched_food_name": self.food.name if self.food else None,
+                "is_database_match": self.food_id is not None
+            }]
+        return []
+
+    @property
+    def total_nutrition(self):
+        return {
+            "calories": float(self.calories or 0.0),
+            "protein": float(self.protein or 0.0),
+            "carbohydrates": float(self.carbohydrates or 0.0),
+            "fat": float(self.fat or 0.0),
+        }
+
+
 
 class AdaptivePreference(Base):
     __tablename__ = "adaptive_preferences"
