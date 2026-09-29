@@ -21,14 +21,23 @@ import {
 interface Food {
   food_id: string;
   name: string;
+  common_name?: string | null;
+  aliases?: string | null;
   brand: string | null;
   barcode: string | null;
+  category?: string | null;
+  cuisine?: string | null;
+  country_or_region?: string | null;
   serving_size: number;
   serving_unit: string;
   calories: number;
   protein: number;
   carbohydrates: number;
   fat: number;
+  fiber?: number | null;
+  is_vegetarian?: boolean | null;
+  is_vegan?: boolean | null;
+  source?: string | null;
   is_custom: boolean;
 }
 
@@ -69,6 +78,17 @@ export const Nutrition: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Food[]>([]);
   const [selectedFood, setSelectedFood] = useState<Food | null>(null);
   const [servingsToLog, setServingsToLog] = useState<number>(1.0);
+
+  // Catalog filter and pagination states
+  const [categories, setCategories] = useState<string[]>([]);
+  const [cuisines, setCuisines] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [selectedCuisine, setSelectedCuisine] = useState<string>('All');
+  const [dietaryFilter, setDietaryFilter] = useState<'all' | 'veg' | 'vegan'>('all');
+  const [searchOffset, setSearchOffset] = useState<number>(0);
+  const [hasMoreFoods, setHasMoreFoods] = useState<boolean>(false);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
 
   // Custom food creator states
   const [showCustomCreator, setShowCustomCreator] = useState(false);
@@ -118,27 +138,81 @@ export const Nutrition: React.FC = () => {
     fetchLogs();
   }, [selectedDate]);
 
+  // Load catalog categories and cuisines when modal opens
   useEffect(() => {
-    const delayDebounce = setTimeout(async () => {
-      if (searchQuery.trim().length === 0) {
-        setSearchResults([]);
-        return;
-      }
+    if (showAddModal && categories.length === 0) {
+      Promise.all([
+        apiFetch(`${API_BASE_URL}/foods/categories`).then(r => r.ok ? r.json() : []),
+        apiFetch(`${API_BASE_URL}/foods/cuisines`).then(r => r.ok ? r.json() : [])
+      ]).then(([cats, cuis]) => {
+        if (Array.isArray(cats)) setCategories(cats);
+        if (Array.isArray(cuis)) setCuisines(cuis);
+      }).catch(err => {
+        if (import.meta.env.DEV) console.error("Error loading categories/cuisines:", err);
+      });
+    }
+  }, [showAddModal, categories.length, apiFetch]);
 
+  // Debounced search with category/cuisine/dietary filtering
+  useEffect(() => {
+    if (!showAddModal) return;
+
+    const delayDebounce = setTimeout(async () => {
+      setIsSearching(true);
       try {
-        const response = await apiFetch(`${API_BASE_URL}/foods?query=${searchQuery}`);
+        const params = new URLSearchParams();
+        if (searchQuery.trim()) params.append('query', searchQuery.trim());
+        if (selectedCategory && selectedCategory !== 'All') params.append('category', selectedCategory);
+        if (selectedCuisine && selectedCuisine !== 'All') params.append('cuisine', selectedCuisine);
+        if (dietaryFilter === 'veg') params.append('is_vegetarian', 'true');
+        if (dietaryFilter === 'vegan') params.append('is_vegan', 'true');
+        params.append('limit', '20');
+        params.append('offset', '0');
+
+        const response = await apiFetch(`${API_BASE_URL}/foods/search?${params.toString()}`);
         if (response.status === 401 || response.status === 403) return;
         if (response.ok) {
-          const results = await response.json();
-          setSearchResults(results);
+          const data = await response.json();
+          setSearchResults(data.items || []);
+          setHasMoreFoods(data.has_more || false);
+          setSearchOffset(data.items?.length || 0);
         }
       } catch (err) {
         if (import.meta.env.DEV) console.error("Food search error:", err);
+      } finally {
+        setIsSearching(false);
       }
-    }, 300);
+    }, 250);
 
     return () => clearTimeout(delayDebounce);
-  }, [searchQuery]);
+  }, [searchQuery, selectedCategory, selectedCuisine, dietaryFilter, showAddModal, apiFetch]);
+
+  const handleLoadMoreFoods = async () => {
+    if (isLoadingMore || !hasMoreFoods) return;
+    setIsLoadingMore(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.append('query', searchQuery.trim());
+      if (selectedCategory && selectedCategory !== 'All') params.append('category', selectedCategory);
+      if (selectedCuisine && selectedCuisine !== 'All') params.append('cuisine', selectedCuisine);
+      if (dietaryFilter === 'veg') params.append('is_vegetarian', 'true');
+      if (dietaryFilter === 'vegan') params.append('is_vegan', 'true');
+      params.append('limit', '20');
+      params.append('offset', searchOffset.toString());
+
+      const response = await apiFetch(`${API_BASE_URL}/foods/search?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(prev => [...prev, ...(data.items || [])]);
+        setHasMoreFoods(data.has_more || false);
+        setSearchOffset(prev => prev + (data.items?.length || 0));
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("Food load more error:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const handleLogFood = async (foodId: string) => {
     setModalError(null);
@@ -618,7 +692,7 @@ export const Nutrition: React.FC = () => {
                     </span>
                     <input
                       type="text"
-                      placeholder="Search Roti, Rice, Dal..."
+                      placeholder="Search Roti, Litti, Dosa, Sushi, Dal..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-slate-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-neonLime"
@@ -626,29 +700,160 @@ export const Nutrition: React.FC = () => {
                     />
                   </div>
 
+                  {/* Filter controls: Cuisine, Category, Dietary */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                          Cuisine
+                        </label>
+                        <select
+                          value={selectedCuisine}
+                          onChange={(e) => setSelectedCuisine(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-neonLime"
+                        >
+                          <option value="All">All Cuisines</option>
+                          {cuisines.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                          Category
+                        </label>
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-neonLime"
+                        >
+                          <option value="All">All Categories</option>
+                          {categories.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Dietary preference pills */}
+                    <div className="flex gap-2 items-center pt-1">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase">Diet:</span>
+                      <button
+                        type="button"
+                        onClick={() => setDietaryFilter('all')}
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                          dietaryFilter === 'all'
+                            ? 'bg-zinc-700 text-white'
+                            : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDietaryFilter('veg')}
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                          dietaryFilter === 'veg'
+                            ? 'bg-emerald-950 border border-emerald-500/50 text-emerald-400 font-bold'
+                            : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        Veg
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDietaryFilter('vegan')}
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1 transition-colors ${
+                          dietaryFilter === 'vegan'
+                            ? 'bg-teal-950 border border-teal-500/50 text-teal-400 font-bold'
+                            : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                        Vegan
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Search results list */}
                   {searchResults.length > 0 && (
-                    <div className="border border-zinc-900 rounded-xl divide-y divide-zinc-900 overflow-hidden max-h-48 overflow-y-auto">
+                    <div className="border border-zinc-900 rounded-xl divide-y divide-zinc-900 overflow-hidden max-h-60 overflow-y-auto">
                       {searchResults.map((food) => (
                         <button
                           key={food.food_id}
                           onClick={() => setSelectedFood(food)}
-                          className={`w-full p-3 text-left hover:bg-zinc-900/50 flex justify-between items-center text-xs transition-colors ${
+                          className={`w-full p-3 text-left hover:bg-zinc-900/50 flex justify-between items-start text-xs transition-colors ${
                             selectedFood?.food_id === food.food_id ? 'bg-zinc-900 border-l-2 border-neonLime' : ''
                           }`}
                         >
-                          <div>
-                            <span className="font-bold text-slate-200 text-sm">{food.name}</span>
-                            <span className="text-[10px] text-zinc-500 ml-2">({food.serving_size}{food.serving_unit})</span>
-                            {food.brand && <p className="text-[10px] text-zinc-500">{food.brand}</p>}
+                          <div className="space-y-1 pr-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-200 text-sm">{food.name}</span>
+                              <span className="text-[10px] text-zinc-500">({food.serving_size}{food.serving_unit})</span>
+                              {food.is_vegetarian !== undefined && food.is_vegetarian !== null && (
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded border ${
+                                  food.is_vegan
+                                    ? 'bg-teal-950/40 text-teal-300 border-teal-800/40'
+                                    : food.is_vegetarian
+                                    ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/40'
+                                    : 'bg-amber-950/40 text-amber-300 border-amber-800/40'
+                                }`}>
+                                  {food.is_vegan ? 'Vegan' : food.is_vegetarian ? 'Veg' : 'Non-Veg'}
+                                </span>
+                              )}
+                            </div>
+                            {food.common_name && (
+                              <p className="text-[11px] text-zinc-400 italic line-clamp-1">{food.common_name}</p>
+                            )}
+                            <div className="flex gap-1.5 flex-wrap pt-0.5">
+                              {food.cuisine && (
+                                <span className="text-[9px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded">
+                                  {food.cuisine}
+                                </span>
+                              )}
+                              {food.category && (
+                                <span className="text-[9px] bg-zinc-800/60 text-zinc-400 px-1.5 py-0.5 rounded">
+                                  {food.category}
+                                </span>
+                              )}
+                              {food.source && (
+                                <span className="text-[9px] text-zinc-500">
+                                  {food.source}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <span className="font-extrabold text-slate-400">{Math.round(food.calories)} kcal</span>
+                          <div className="text-right shrink-0">
+                            <span className="font-extrabold text-slate-200 block">{Math.round(food.calories)} kcal</span>
+                            <span className="text-[10px] text-zinc-500 block">
+                              P: {Math.round(food.protein)}g | C: {Math.round(food.carbohydrates)}g | F: {Math.round(food.fat)}g
+                            </span>
+                          </div>
                         </button>
                       ))}
+
+                      {hasMoreFoods && (
+                        <div className="p-2 text-center bg-zinc-950/80">
+                          <button
+                            type="button"
+                            onClick={handleLoadMoreFoods}
+                            disabled={isLoadingMore}
+                            className="text-xs text-neonLime hover:underline font-bold disabled:opacity-50 py-1"
+                          >
+                            {isLoadingMore ? "Loading more foods..." : "Load More Foods"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {searchQuery && searchResults.length === 0 && (
+                  {isSearching && (
+                    <p className="text-xs text-zinc-500 text-center py-2 animate-pulse">Searching foods...</p>
+                  )}
+
+                  {!isSearching && searchResults.length === 0 && (
                     <p className="text-xs text-zinc-500 text-center py-4">No matching foods found. Create a custom food instead!</p>
                   )}
 

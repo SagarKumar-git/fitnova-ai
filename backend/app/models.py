@@ -31,6 +31,10 @@ class User(Base):
     user_achievements = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
     ai_insights = relationship("AIInsight", back_populates="user", cascade="all, delete-orphan")
     food_recognition_logs = relationship("FoodRecognitionLog", back_populates="user", cascade="all, delete-orphan")
+    workout_idempotency_records = relationship("WorkoutIdempotencyRecord", back_populates="user", cascade="all, delete-orphan")
+    adaptive_preferences = relationship("AdaptivePreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    adaptive_decisions = relationship("AdaptiveDecision", back_populates="user", cascade="all, delete-orphan")
+    safety_events = relationship("SafetyEvent", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def has_profile(self) -> bool:
@@ -111,17 +115,37 @@ class Food(Base):
 
     food_id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     name = Column(String, index=True, nullable=False)
+    common_name = Column(String, index=True, nullable=True)
+    aliases = Column(String, index=True, nullable=True)
     brand = Column(String, nullable=True)
     barcode = Column(String, index=True, nullable=True)
+    category = Column(String, index=True, nullable=True)
+    cuisine = Column(String, index=True, nullable=True)
+    country_or_region = Column(String, nullable=True)
     serving_size = Column(Float, nullable=False)  # e.g. 100
     serving_unit = Column(String, nullable=False)  # e.g. 'g', 'ml', 'piece'
     calories = Column(Float, nullable=False)  # per serving_size
     protein = Column(Float, nullable=False)  # in grams
     carbohydrates = Column(Float, nullable=False)  # in grams
     fat = Column(Float, nullable=False)  # in grams
+    fiber = Column(Float, nullable=False, default=0.0)
+    sugar = Column(Float, nullable=False, default=0.0)
+    sodium = Column(Float, nullable=False, default=0.0)
+    saturated_fat = Column(Float, nullable=False, default=0.0)
+    cholesterol = Column(Float, nullable=False, default=0.0)
+    micronutrients = Column(JSON, nullable=True)
+    ingredients = Column(String, nullable=True)
+    preparation_method = Column(String, nullable=True)
+    is_vegetarian = Column(Boolean, nullable=False, default=True)
+    is_vegan = Column(Boolean, nullable=False, default=False)
+    food_type = Column(String, nullable=True)  # 'raw', 'cooked', 'packaged', 'restaurant', 'beverage'
+    source = Column(String, nullable=True, default="fitnova_verified")
+    source_id = Column(String, nullable=True)
+    confidence_score = Column(Float, nullable=False, default=1.0)
     is_custom = Column(Boolean, nullable=False, default=False)
     created_by = Column(Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     food_logs = relationship("FoodLog", back_populates="food", cascade="all, delete-orphan")
@@ -227,7 +251,7 @@ class Exercise(Base):
     muscles = relationship("ExerciseMuscle", back_populates="exercise", cascade="all, delete-orphan")
     media = relationship("ExerciseMedia", back_populates="exercise", uselist=False, cascade="all, delete-orphan")
     template_exercises = relationship("WorkoutTemplateExercise", back_populates="exercise", cascade="all, delete-orphan")
-    workout_sets = relationship("WorkoutSet", back_populates="exercise", cascade="all, delete-orphan")
+    workout_sets = relationship("WorkoutSet", foreign_keys="[WorkoutSet.exercise_id]", back_populates="exercise", cascade="all, delete-orphan")
     personal_records = relationship("PersonalRecord", back_populates="exercise", cascade="all, delete-orphan")
 
 
@@ -332,7 +356,12 @@ class WorkoutSession(Base):
     notes = Column(String, nullable=True)
     total_volume = Column(Float, nullable=False, default=0.0)
     total_sets = Column(Integer, nullable=False, default=0)
+    status = Column(String, default="active", nullable=False)  # 'active', 'paused', 'completed', 'cancelled'
+    rating = Column(Integer, nullable=True)  # 1-5 user rating
+    calories = Column(Float, default=0.0, nullable=False)
+    version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="workout_sessions")
@@ -351,11 +380,34 @@ class WorkoutSet(Base):
     rpe = Column(Float, nullable=True)
     rest_seconds = Column(Integer, nullable=True)
     is_pr = Column(Boolean, nullable=False, default=False)
+    is_skipped = Column(Boolean, nullable=False, default=False)
+    notes = Column(String, nullable=True)
+    substitute_exercise_id = Column(Uuid, ForeignKey("exercises.id", ondelete="SET NULL"), nullable=True)
+    version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     session = relationship("WorkoutSession", back_populates="sets")
-    exercise = relationship("Exercise", back_populates="workout_sets")
+    exercise = relationship("Exercise", foreign_keys=[exercise_id], back_populates="workout_sets")
+    substitute_exercise = relationship("Exercise", foreign_keys=[substitute_exercise_id])
+
+
+class WorkoutIdempotencyRecord(Base):
+    __tablename__ = "workout_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_user_workout_idempotency"),
+    )
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    idempotency_key = Column(String, index=True, nullable=False)
+    endpoint = Column(String, nullable=False)
+    status_code = Column(Integer, nullable=False)
+    response_payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="workout_idempotency_records")
 
 
 class AIWorkoutPlan(Base):
@@ -477,5 +529,58 @@ class FoodRecognitionLog(Base):
     food = relationship("Food")
 
 
+class AdaptivePreference(Base):
+    __tablename__ = "adaptive_preferences"
+
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    adaptive_training_enabled = Column(Boolean, nullable=False, default=True)
+    automatic_intensity_reduction_allowed = Column(Boolean, nullable=False, default=True)
+    automatic_exercise_substitution_allowed = Column(Boolean, nullable=False, default=True)
+    progressive_overload_recommendations_enabled = Column(Boolean, nullable=False, default=True)
+    minimum_confidence_required = Column(String, nullable=False, default="MODERATE") # LOW, MODERATE, HIGH, VERY_HIGH
+    notify_on_workout_changed = Column(Boolean, nullable=False, default=True)
+    notify_on_intensity_reduced = Column(Boolean, nullable=False, default=True)
+    notify_on_high_confidence_progression = Column(Boolean, nullable=False, default=True)
+    notify_on_stale_health_data = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="adaptive_preferences", uselist=False)
 
 
+class AdaptiveDecision(Base):
+    __tablename__ = "adaptive_decisions"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    session_id = Column(Uuid, ForeignKey("workout_sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    decision_type = Column(String, nullable=False)
+    original_plan = Column(JSON, nullable=False)
+    adaptive_plan = Column(JSON, nullable=False)
+    reasons = Column(JSON, nullable=False)
+    supporting_signals = Column(JSON, nullable=False)
+    confidence = Column(Float, nullable=False)
+    safety_limits_applied = Column(JSON, nullable=False)
+    user_action = Column(String, nullable=False, default="pending")
+    resulting_outcome = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="adaptive_decisions")
+    session = relationship("WorkoutSession")
+
+class SafetyEvent(Base):
+    __tablename__ = "safety_events"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    session_id = Column(String, index=True, nullable=False)
+    event_type = Column(String, nullable=False)
+    safety_state = Column(String, nullable=False)
+    intervention = Column(String, nullable=True)
+    confidence = Column(Float, nullable=False)
+    freshness = Column(String, nullable=False)
+    provider = Column(String, nullable=False)
+    client_timestamp = Column(Integer, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="safety_events")

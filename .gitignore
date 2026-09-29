@@ -1,6 +1,9 @@
 # Environment files
 .env
-backend/.env
+.env.*
+*.env
+backend/.env*
+frontend/.env*
 
 # Python
 __pycache__/
@@ -21,3 +24,7 @@ dist/
 
 # Logs
 *.log
+
+# Uploads & Media
+backend/app/static/uploads/
+uploads/

@@ -3,8 +3,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
 import uuid
+import logging
 from datetime import datetime, date, timedelta
 import json
+
+logger = logging.getLogger("fitnova.insights")
 
 from app.database import get_db
 from app.models import User, FoodLog, MealPlan, Exercise, WorkoutSession, AIWorkoutPlan, AIMealPlan, UserAchievement, WorkoutStreak, Achievement, WaterLog, DailyNutritionSummary, WeightHistory, FitnessMetrics, AIInsight
@@ -360,7 +363,8 @@ def get_user_insights(
         return saved_insights
     except Exception as e:
         db.rollback()
+        logger.error(f"Failed to compile AI insights: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to compile AI insights: {str(e)}"
+            detail="Failed to compile AI insights. Please try again later."
         )

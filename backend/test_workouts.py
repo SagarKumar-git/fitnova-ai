@@ -269,5 +269,43 @@ class TestFitNovaWorkoutsAPI(unittest.TestCase):
         self.assertIsNotNone(bench_pr)
         self.assertEqual(bench_pr["best_weight"], 85.0)
 
+        # 14. Sprint 3.6: Plural /api/workouts/analytics
+        res = self.client.get("/api/workouts/analytics", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["total_workouts"], 1)
+
+        # 15. Sprint 3.6: Strength Progression Analytics with Pagination
+        res = self.client.get("/api/workouts/analytics/strength?page=1&page_size=10", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        strength_data = res.json()
+        self.assertIn("exercises", strength_data)
+        self.assertGreaterEqual(strength_data["total_exercises"], 1)
+        bench_prog = next((e for e in strength_data["exercises"] if e["exercise_id"] == bench_press["id"]), None)
+        self.assertIsNotNone(bench_prog)
+        self.assertEqual(bench_prog["max_weight"], 85.0)
+        self.assertEqual(bench_prog["current_1rm"], 99.2)
+
+        # 16. Sprint 3.6: Volume Trends Analytics
+        res = self.client.get("/api/workouts/analytics/volume", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        vol_data = res.json()
+        self.assertEqual(vol_data["total_volume_kg"], 625.0)
+        self.assertGreaterEqual(len(vol_data["weekly_trends"]), 1)
+
+        # 17. Sprint 3.6: Consistency Analytics
+        res = self.client.get("/api/workouts/analytics/consistency", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        cons_data = res.json()
+        self.assertEqual(cons_data["total_workouts"], 1)
+        self.assertGreater(cons_data["consistency_score"], 0)
+
+        # 18. Sprint 3.6: Exercise History Analytics Endpoint
+        res = self.client.get(f"/api/workouts/exercises/{bench_press['id']}/history", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        ex_hist = res.json()
+        self.assertEqual(ex_hist["exercise_id"], bench_press["id"])
+        self.assertEqual(ex_hist["max_weight"], 85.0)
+        self.assertEqual(ex_hist["current_estimated_1rm"], 99.2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,8 +9,12 @@ import { ValidationError } from '../../../platform/errors/index.ts';
 const VALID_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
   idle: ['preparing', 'active'],
   preparing: ['active', 'cancelled'],
-  active: ['paused', 'completed', 'cancelled'],
-  paused: ['active', 'completed', 'cancelled'],
+  active: ['paused', 'offline', 'syncing', 'completed', 'cancelled', 'failed'],
+  paused: ['active', 'offline', 'syncing', 'completed', 'cancelled', 'failed'],
+  offline: ['active', 'paused', 'syncing', 'recovered', 'completed', 'cancelled', 'failed'],
+  syncing: ['active', 'paused', 'offline', 'recovered', 'completed', 'failed'],
+  recovered: ['active', 'paused', 'completed', 'cancelled', 'failed'],
+  failed: ['recovered', 'cancelled', 'completed'],
   completed: [], // Terminal
   cancelled: [], // Terminal
 };

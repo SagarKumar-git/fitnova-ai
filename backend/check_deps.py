@@ -225,6 +225,8 @@ def resolve_package(import_name: str) -> str:
 
 def is_local_package(import_name: str, root: Path) -> bool:
     """Returns True if the import name corresponds to a local module/package."""
+    if import_name in {"backend", "app"}:
+        return True
     # Check if there's a directory or file with that name under root
     if (root / import_name).is_dir():
         return True
@@ -305,10 +307,10 @@ def check_dependencies(
 
         if covered:
             if verbose:
-                print(f"  [OK      ] {imp_name:30s}  →  {pkg}")
+                print(f"  [OK      ] {imp_name:30s}  ->  {pkg}")
         else:
             violations.append(
-                f"  [MISSING ] {imp_name:30s}  →  add '{pkg}' to requirements.txt\n"
+                f"  [MISSING ] {imp_name:30s}  ->  add '{pkg}' to requirements.txt\n"
                 f"             imported in: {', '.join(files[:3])}"
                 + (" ..." if len(files) > 3 else "")
             )

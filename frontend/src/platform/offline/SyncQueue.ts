@@ -52,7 +52,7 @@ export class SyncQueue {
     // If queue exceeds max size, drop oldest completed or failed operation
     if (this.queue.length >= this.maxQueueSize) {
       const dropIndex = this.queue.findIndex(
-        (op) => op.status === 'completed' || op.status === 'failed'
+        (op) => op.status === 'completed' || op.status === 'failed' || op.status === 'dead_letter'
       );
       if (dropIndex >= 0) {
         this.queue.splice(dropIndex, 1);
@@ -80,6 +80,10 @@ export class SyncQueue {
 
   getPending(): SyncOperation[] {
     return this.queue.filter((op) => op.status === 'pending');
+  }
+
+  getDeadLetter(): SyncOperation[] {
+    return this.queue.filter((op) => op.status === 'dead_letter');
   }
 
   getAll(): SyncOperation[] {

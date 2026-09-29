@@ -43,6 +43,8 @@ export const AuthInput: React.FC<AuthInputProps> = ({
         <input
           id={id}
           disabled={disabled}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-error` : undefined}
           {...props}
           className={`w-full pl-10 pr-4 py-3 bg-[rgba(4,17,31,0.85)] border border-[rgba(148,163,184,0.20)] hover:border-[rgba(163,255,0,0.40)] focus:border-[#39FF14] focus:outline-none rounded-xl text-white placeholder-[#64748B] text-sm font-medium transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(57,255,20,0.08),0_0_20px_rgba(57,255,20,0.10)] disabled:opacity-50 disabled:cursor-not-allowed ${
             error ? 'border-red-500/80 focus:border-red-500' : ''
@@ -51,7 +53,7 @@ export const AuthInput: React.FC<AuthInputProps> = ({
       </div>
 
       {error && (
-        <p className="mt-1 text-xs text-rose-400 font-medium" role="alert">
+        <p id={`${id}-error`} className="mt-1 text-xs text-rose-400 font-medium" role="alert">
           {error}
         </p>
       )}

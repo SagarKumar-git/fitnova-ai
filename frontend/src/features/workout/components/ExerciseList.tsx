@@ -36,8 +36,18 @@ export const ExerciseList: React.FC<ExerciseListProps> = ({
         return (
           <div
             key={workoutExercise.id || `${workoutExercise.exerciseId}-${index}`}
+            role={interactive ? 'button' : undefined}
+            tabIndex={interactive ? 0 : undefined}
+            aria-pressed={interactive ? isActive : undefined}
+            aria-label={interactive ? `Select exercise ${index + 1}: ${workoutExercise.exerciseName}` : undefined}
+            onKeyDown={(e) => {
+              if (interactive && onSelectExercise && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onSelectExercise(index);
+              }
+            }}
             onClick={() => interactive && onSelectExercise && onSelectExercise(index)}
-            className={`group rounded-xl border p-4 transition-all duration-200 ${
+            className={`group rounded-xl border p-4 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime ${
               interactive ? 'cursor-pointer' : ''
             } ${
               isActive

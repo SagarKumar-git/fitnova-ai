@@ -8,6 +8,9 @@ import {
   NetworkError,
   AuthenticationError,
   AuthorizationError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError,
   ValidationError,
   TimeoutError,
   UnknownError,
@@ -58,10 +61,19 @@ export function normalizeError(
     if (lower.includes('403') || lower.includes('forbidden')) {
       return new AuthorizationError(sanitizedMsg, { cause: err });
     }
-    if (lower.includes('network') || lower.includes('failed to fetch') || lower.includes('connection')) {
+    if (lower.includes('404') || lower.includes('not found')) {
+      return new NotFoundError(sanitizedMsg, { cause: err });
+    }
+    if (lower.includes('409') || lower.includes('conflict')) {
+      return new ConflictError(sanitizedMsg, { cause: err });
+    }
+    if (lower.includes('429') || lower.includes('rate limit') || lower.includes('too many requests')) {
+      return new RateLimitError(sanitizedMsg, { cause: err });
+    }
+    if (lower.includes('network') || lower.includes('failed to fetch') || lower.includes('connection') || lower.includes('502') || lower.includes('503')) {
       return new NetworkError(sanitizedMsg, { cause: err });
     }
-    if (lower.includes('validation') || lower.includes('invalid input')) {
+    if (lower.includes('validation') || lower.includes('invalid input') || lower.includes('422')) {
       return new ValidationError(sanitizedMsg, { cause: err });
     }
     if (lower.includes('timeout')) {
@@ -102,6 +114,12 @@ export function getUserSafeMessage(err: unknown): string {
       return 'Your session has expired. Please log in again.';
     case 'AUTHORIZATION_ERROR':
       return 'You do not have permission to perform this action.';
+    case 'NOT_FOUND_ERROR':
+      return 'The requested resource was not found.';
+    case 'CONFLICT_ERROR':
+      return 'The resource has been modified elsewhere. Please refresh and retry.';
+    case 'RATE_LIMIT_ERROR':
+      return 'Too many requests. Please wait a moment before retrying.';
     case 'NETWORK_ERROR':
       return 'Network connection issue. Please check your internet connection.';
     case 'TIMEOUT_ERROR':

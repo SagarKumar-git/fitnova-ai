@@ -10,3 +10,8 @@ export * from './ExerciseSubstitutionEngine.ts';
 export * from './WorkoutRecommendationEngine.ts';
 export * from './WorkoutIntelligenceService.ts';
 export * from './NovaWorkoutService.ts';
+export * from './PlateauDetectionEngine.ts';
+export * from './WorkoutGenerationService.ts';
+export * from './NovaContextEngine.ts';
+export * from './AdaptiveTrainingEngine.ts';
+export * from './AdaptiveWorkoutModifier.ts';

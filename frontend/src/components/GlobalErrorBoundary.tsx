@@ -40,6 +40,20 @@ export class GlobalErrorBoundary extends Component<Props, State> {
       recoverability: normalized.recoverability,
       componentStack: errorInfo.componentStack ? errorInfo.componentStack.substring(0, 500) : undefined,
     });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('fitnova:application_error', {
+          detail: {
+            source: 'GlobalErrorBoundary',
+            error: normalized.message,
+            code: normalized.code,
+            recoverability: normalized.recoverability,
+            componentStack: errorInfo.componentStack ? errorInfo.componentStack.substring(0, 500) : undefined,
+          },
+        })
+      );
+    }
   }
 
   private handleReset = (): void => {
@@ -56,10 +70,10 @@ export class GlobalErrorBoundary extends Component<Props, State> {
       const isRetryable = this.state.error.recoverability === 'retryable' || this.state.error.code === 'NETWORK_ERROR';
 
       return (
-        <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6 text-white">
+        <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6 text-white" role="alert" aria-live="assertive">
           <div className="max-w-md w-full glass-panel p-8 rounded-3xl border border-zinc-800/80 shadow-2xl relative overflow-hidden text-center">
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-red-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-red-950/50 border border-red-800/50 flex items-center justify-center text-red-400 shadow-lg">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-red-950/50 border border-red-800/50 flex items-center justify-center text-red-400 shadow-lg" aria-hidden="true">
               <AlertTriangle className="w-8 h-8" />
             </div>
 
@@ -75,9 +89,10 @@ export class GlobalErrorBoundary extends Component<Props, State> {
                 <button
                   type="button"
                   onClick={this.handleReset}
-                  className="inline-flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-r from-neonLime to-emerald-400 text-zinc-950 font-black rounded-xl text-xs uppercase tracking-wider hover:opacity-90 transition-all shadow-lg shadow-neonLime/20 cursor-pointer"
+                  className="min-h-[44px] inline-flex items-center justify-center gap-2 py-3 px-6 bg-gradient-to-r from-neonLime to-emerald-400 text-zinc-950 font-black rounded-xl text-xs uppercase tracking-wider hover:opacity-90 transition-all shadow-lg shadow-neonLime/20 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime"
+                  aria-label="Try recovering from error"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="w-4 h-4" aria-hidden="true" />
                   Try Again
                 </button>
               )}
@@ -88,9 +103,10 @@ export class GlobalErrorBoundary extends Component<Props, State> {
                   this.handleReset();
                   window.location.href = '/dashboard';
                 }}
-                className="inline-flex items-center justify-center gap-2 py-3 px-6 bg-zinc-900 border border-zinc-800 text-zinc-200 font-bold rounded-xl text-xs uppercase tracking-wider hover:border-zinc-700 hover:text-white transition-all cursor-pointer"
+                className="min-h-[44px] inline-flex items-center justify-center gap-2 py-3 px-6 bg-zinc-900 border border-zinc-800 text-zinc-200 font-bold rounded-xl text-xs uppercase tracking-wider hover:border-zinc-700 hover:text-white transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                aria-label="Return to Dashboard"
               >
-                <Home className="w-4 h-4" />
+                <Home className="w-4 h-4" aria-hidden="true" />
                 Go to Dashboard
               </button>
             </div>

@@ -116,32 +116,78 @@ class DashboardResponse(BaseModel):
 
 class FoodCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=150)
+    common_name: Optional[str] = Field(None, max_length=150)
+    aliases: Optional[str] = None
     brand: Optional[str] = Field(None, max_length=100)
     barcode: Optional[str] = Field(None, max_length=50)
+    category: Optional[str] = Field(None, max_length=100)
+    cuisine: Optional[str] = Field(None, max_length=100)
+    country_or_region: Optional[str] = Field(None, max_length=100)
     serving_size: float = Field(..., ge=0.1)
     serving_unit: str = Field(..., min_length=1, max_length=30)
     calories: float = Field(..., ge=0.0)
     protein: float = Field(..., ge=0.0)
     carbohydrates: float = Field(..., ge=0.0)
     fat: float = Field(..., ge=0.0)
+    fiber: float = Field(0.0, ge=0.0)
+    sugar: float = Field(0.0, ge=0.0)
+    sodium: float = Field(0.0, ge=0.0)
+    saturated_fat: float = Field(0.0, ge=0.0)
+    cholesterol: float = Field(0.0, ge=0.0)
+    micronutrients: Optional[Dict[str, Any]] = None
+    ingredients: Optional[str] = None
+    preparation_method: Optional[str] = None
+    is_vegetarian: bool = True
+    is_vegan: bool = False
+    food_type: Optional[str] = "cooked"
+    source: Optional[str] = "custom"
+    source_id: Optional[str] = None
+    confidence_score: float = 1.0
 
 class FoodResponse(BaseModel):
     food_id: uuid.UUID
     name: str
-    brand: Optional[str]
-    barcode: Optional[str]
+    common_name: Optional[str] = None
+    aliases: Optional[str] = None
+    brand: Optional[str] = None
+    barcode: Optional[str] = None
+    category: Optional[str] = None
+    cuisine: Optional[str] = None
+    country_or_region: Optional[str] = None
     serving_size: float
     serving_unit: str
     calories: float
     protein: float
     carbohydrates: float
     fat: float
-    is_custom: bool
-    created_by: Optional[uuid.UUID]
+    fiber: float = 0.0
+    sugar: float = 0.0
+    sodium: float = 0.0
+    saturated_fat: float = 0.0
+    cholesterol: float = 0.0
+    micronutrients: Optional[Dict[str, Any]] = None
+    ingredients: Optional[str] = None
+    preparation_method: Optional[str] = None
+    is_vegetarian: bool = True
+    is_vegan: bool = False
+    food_type: Optional[str] = None
+    source: Optional[str] = "fitnova_verified"
+    source_id: Optional[str] = None
+    confidence_score: float = 1.0
+    is_custom: bool = False
+    created_by: Optional[uuid.UUID] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+class FoodSearchResponse(BaseModel):
+    total: int
+    items: List[FoodResponse]
+    limit: int
+    offset: int
+    has_more: bool
 
 class FoodLogCreate(BaseModel):
     food_id: uuid.UUID
@@ -408,6 +454,10 @@ class WorkoutSetCreate(BaseModel):
     weight: float = Field(..., ge=0)
     rpe: Optional[float] = Field(None, ge=1, le=10)
     rest_seconds: Optional[int] = Field(None, ge=0)
+    is_skipped: Optional[bool] = False
+    notes: Optional[str] = None
+    substitute_exercise_id: Optional[uuid.UUID] = None
+    idempotency_key: Optional[str] = None
 
 class WorkoutSetResponse(BaseModel):
     id: uuid.UUID
@@ -419,6 +469,11 @@ class WorkoutSetResponse(BaseModel):
     rpe: Optional[float]
     rest_seconds: Optional[int]
     is_pr: bool
+    is_skipped: bool = False
+    notes: Optional[str] = None
+    substitute_exercise_id: Optional[uuid.UUID] = None
+    substitute_exercise_name: Optional[str] = None
+    version: int = 1
     created_at: datetime
     exercise_name: Optional[str] = None
 
@@ -428,6 +483,7 @@ class WorkoutSetResponse(BaseModel):
 class WorkoutSessionStart(BaseModel):
     name: str = Field(..., min_length=2, max_length=150)
     template_id: Optional[uuid.UUID] = None
+    idempotency_key: Optional[str] = None
 
 class WorkoutSessionResponse(BaseModel):
     id: uuid.UUID
@@ -440,7 +496,12 @@ class WorkoutSessionResponse(BaseModel):
     notes: Optional[str]
     total_volume: float
     total_sets: int
+    status: str = "active"
+    rating: Optional[int] = None
+    calories: float = 0.0
+    version: int = 1
     created_at: datetime
+    updated_at: Optional[datetime] = None
     sets: List[WorkoutSetResponse] = []
 
     class Config:
@@ -448,6 +509,29 @@ class WorkoutSessionResponse(BaseModel):
 
 class WorkoutSessionFinish(BaseModel):
     notes: Optional[str] = None
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    calories: Optional[float] = Field(None, ge=0)
+    duration_seconds: Optional[int] = Field(None, ge=0)
+    idempotency_key: Optional[str] = None
+
+class WorkoutSessionUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=150)
+    notes: Optional[str] = None
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    calories: Optional[float] = Field(None, ge=0)
+    duration_seconds: Optional[int] = Field(None, ge=0)
+    status: Optional[str] = None
+    version: Optional[int] = None
+
+class WorkoutSessionCancel(BaseModel):
+    reason: Optional[str] = None
+    idempotency_key: Optional[str] = None
+
+class ExerciseSubstitutionRequest(BaseModel):
+    original_exercise_id: uuid.UUID
+    substitute_exercise_id: uuid.UUID
+    reason: Optional[str] = None
+    idempotency_key: Optional[str] = None
 
 class WorkoutAnalyticsResponse(BaseModel):
     total_workouts: int
@@ -458,6 +542,68 @@ class WorkoutAnalyticsResponse(BaseModel):
     workout_streak: WorkoutStreakResponse
     muscle_volume_breakdown: dict
     goals: Optional[WorkoutGoalResponse] = None
+
+class StrengthProgressionItem(BaseModel):
+    exercise_id: uuid.UUID
+    exercise_name: str
+    previous_1rm: float
+    current_1rm: float
+    percentage_improvement: float
+    max_weight: float
+    max_reps: int
+    total_volume: float
+    number_of_sessions: int
+    last_performed_date: Optional[date] = None
+    trend: List[dict] = []
+
+class StrengthAnalyticsResponse(BaseModel):
+    total_exercises: int
+    exercises: List[StrengthProgressionItem]
+    page: int
+    page_size: int
+    total_pages: int
+
+class VolumeWeeklyPoint(BaseModel):
+    week: str
+    volume_kg: float
+    workouts_count: int
+    average_volume_per_workout: float
+
+class VolumeMonthlyPoint(BaseModel):
+    month: str
+    volume_kg: float
+    workouts_count: int
+
+class VolumeAnalyticsResponse(BaseModel):
+    total_volume_kg: float
+    weekly_trends: List[VolumeWeeklyPoint]
+    monthly_trends: List[VolumeMonthlyPoint]
+
+class ConsistencyAnalyticsResponse(BaseModel):
+    weekly_workout_frequency: float
+    adherence_percentage: float
+    current_streak_weeks: int
+    longest_streak_weeks: int
+    total_workouts: int
+    consistency_score: int
+    rating_label: str
+    average_days_between_sessions: float
+    missed_planned_workouts: int
+    summary: str
+    actionable_tip: str
+
+class ExerciseHistoryAnalyticsResponse(BaseModel):
+    exercise_id: uuid.UUID
+    exercise_name: str
+    total_sessions: int
+    max_weight: float
+    max_reps: int
+    current_estimated_1rm: float
+    previous_estimated_1rm: float
+    percentage_improvement: float
+    sets_history: List[dict]
+    progress_curve: List[dict]
+    personal_record: Optional[dict] = None
 
 class AdminStatsResponse(BaseModel):
     total_users: int
@@ -661,6 +807,170 @@ class AdminFoodScanAnalyticsResponse(BaseModel):
     daily_activity: List[dict]
 
 
+# ==========================================
+# SPRINT 3.7 WEARABLE HEALTH SCHEMAS
+# ==========================================
+
+class HeartRatePoint(BaseModel):
+    bpm: int
+    timestamp: int
+    source: str
+    context: Optional[str] = "resting"
 
 
+class HeartRateResponse(BaseModel):
+    current_bpm: int
+    resting_bpm: int
+    min_bpm: int
+    max_bpm: int
+    samples: List[HeartRatePoint]
 
+
+class HRVPoint(BaseModel):
+    rmssd_ms: float
+    timestamp: int
+    status: str
+
+
+class HRVResponse(BaseModel):
+    current_rmssd_ms: float
+    baseline_rmssd_ms: float
+    status: str  # optimal, suppressed, elevated
+    deviation_pct: float
+    samples: List[HRVPoint]
+
+
+class SleepStageItem(BaseModel):
+    stage: str
+    duration_minutes: int
+
+
+class SleepSessionResponse(BaseModel):
+    date: str
+    total_duration_minutes: int
+    time_asleep_minutes: int
+    deep_minutes: int
+    rem_minutes: int
+    light_minutes: int
+    efficiency_pct: int
+    sleep_score: int
+    stages: List[SleepStageItem]
+
+
+class RecoveryMetricsResponse(BaseModel):
+    recovery_score: int  # 0 to 100
+    readiness_state: str  # optimal, moderate, low, rest_recommended
+    recommended_intensity: str  # full, moderate, light, active_recovery, none
+    intensity_modifier: float
+    resting_heart_rate_bpm: int
+    hrv_rmssd_ms: float
+    hrv_status: str
+    sleep_hours: float
+    sleep_efficiency_pct: int
+    deep_sleep_pct: int
+    contributing_factors: List[str]
+    recovery_warnings: List[str]
+    data_sources_used: List[str]
+
+
+class HealthSummaryResponse(BaseModel):
+    status: str
+    provider: str
+    last_synced_at: int
+    recovery: RecoveryMetricsResponse
+    today_steps: int
+    active_calories_burned: int
+
+class AdaptivePreferenceUpdate(BaseModel):
+    adaptive_training_enabled: Optional[bool] = None
+    automatic_intensity_reduction_allowed: Optional[bool] = None
+    automatic_exercise_substitution_allowed: Optional[bool] = None
+    progressive_overload_recommendations_enabled: Optional[bool] = None
+    minimum_confidence_required: Optional[str] = None
+    notify_on_workout_changed: Optional[bool] = None
+    notify_on_intensity_reduced: Optional[bool] = None
+    notify_on_high_confidence_progression: Optional[bool] = None
+    notify_on_stale_health_data: Optional[bool] = None
+
+
+class AdaptivePreferenceResponse(BaseModel):
+    user_id: uuid.UUID
+    adaptive_training_enabled: bool
+    automatic_intensity_reduction_allowed: bool
+    automatic_exercise_substitution_allowed: bool
+    progressive_overload_recommendations_enabled: bool
+    minimum_confidence_required: str
+    notify_on_workout_changed: bool
+    notify_on_intensity_reduced: bool
+    notify_on_high_confidence_progression: bool
+    notify_on_stale_health_data: bool
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdaptiveDecisionCreate(BaseModel):
+    session_id: uuid.UUID
+    decision_type: str
+    original_plan: dict
+    adaptive_plan: dict
+    reasons: List[str]
+    supporting_signals: List[str]
+    confidence: float
+    safety_limits_applied: List[str]
+    user_action: str
+    resulting_outcome: Optional[str] = None
+
+
+class AdaptiveDecisionUpdate(BaseModel):
+    user_action: Optional[str] = None
+    resulting_outcome: Optional[str] = None
+
+
+class AdaptiveDecisionResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    session_id: uuid.UUID
+    decision_type: str
+    original_plan: dict
+    adaptive_plan: dict
+    reasons: List[str]
+    supporting_signals: List[str]
+    confidence: float
+    safety_limits_applied: List[str]
+    user_action: str
+    resulting_outcome: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SafetyEventCreate(BaseModel):
+    session_id: str
+    event_type: str
+    safety_state: str
+    intervention: Optional[str] = None
+    confidence: float
+    freshness: str
+    provider: str
+    client_timestamp: int
+
+
+class SafetyEventResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    session_id: str
+    event_type: str
+    safety_state: str
+    intervention: Optional[str]
+    confidence: float
+    freshness: str
+    provider: str
+    client_timestamp: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

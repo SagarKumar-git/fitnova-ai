@@ -48,3 +48,7 @@ export * from './lifecycle/index.ts';
 
 // 15. Dependency Injection Container & React Integration
 export * from './container/index.ts';
+
+// 16. Production Observability (Sprint 5.1)
+export * from './observability/index.ts';
+

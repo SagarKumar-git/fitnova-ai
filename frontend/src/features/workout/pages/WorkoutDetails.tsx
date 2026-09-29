@@ -10,12 +10,14 @@ import { useWorkout } from '../state/WorkoutContext.tsx';
 import type { Exercise } from '../models/Exercise.ts';
 import { ExerciseCard } from '../components/ExerciseCard.tsx';
 import { WorkoutEmptyState } from '../components/WorkoutEmptyState.tsx';
+import { PreWorkoutBrief } from '../components/PreWorkoutBrief.tsx';
 import {
   ArrowLeft,
   Clock,
   Dumbbell,
   Flame,
   Play,
+  Sparkles,
 } from 'lucide-react';
 
 export const WorkoutDetails: React.FC = () => {
@@ -25,6 +27,7 @@ export const WorkoutDetails: React.FC = () => {
   const { workout, isLoading, error } = useWorkoutDetails(id);
 
   const [exercisesMap, setExercisesMap] = useState<Map<string, Exercise>>(new Map());
+  const [showBrief, setShowBrief] = useState<boolean>(true);
   const { service } = useWorkout();
 
   useEffect(() => {
@@ -93,11 +96,27 @@ export const WorkoutDetails: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBrief((prev) => !prev)}
+              className="text-xs font-bold text-neonLime bg-neonLime/10 border border-neonLime/30 px-3 py-1.5 rounded-xl hover:bg-neonLime/20 transition-all flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{showBrief ? 'Hide AI Brief' : 'Show AI Brief'}</span>
+            </button>
             <span className="text-xs font-semibold text-zinc-400 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-xl">
               {workout.difficulty}
             </span>
           </div>
         </div>
+
+        {/* Pre-Workout Intelligence Briefing */}
+        {showBrief && (
+          <PreWorkoutBrief
+            workout={workout}
+            onStartWorkout={handleStartWorkout}
+          />
+        )}
 
         {/* Hero Details Card */}
         <div className="rounded-3xl bg-zinc-900/80 border border-zinc-800 p-6 sm:p-8 relative overflow-hidden">

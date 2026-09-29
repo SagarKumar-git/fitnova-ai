@@ -89,6 +89,39 @@ export class AuthorizationError extends FitNovaError {
   }
 }
 
+export class NotFoundError extends FitNovaError {
+  constructor(message: string = 'Resource not found', options: ErrorOptions = {}) {
+    super('NOT_FOUND_ERROR', message, {
+      recoverability: 'fatal',
+      ...options,
+    });
+  }
+}
+
+export class ConflictError extends FitNovaError {
+  constructor(message: string = 'Resource conflict detected', options: ErrorOptions = {}) {
+    super('CONFLICT_ERROR', message, {
+      recoverability: 'retryable',
+      ...options,
+    });
+  }
+}
+
+export class RateLimitError extends FitNovaError {
+  readonly retryAfterSeconds?: number;
+
+  constructor(
+    message: string = 'Rate limit exceeded. Please slow down.',
+    options: ErrorOptions & { retryAfterSeconds?: number } = {}
+  ) {
+    super('RATE_LIMIT_ERROR', message, {
+      recoverability: 'retryable',
+      ...options,
+    });
+    this.retryAfterSeconds = options.retryAfterSeconds;
+  }
+}
+
 export class StorageError extends FitNovaError {
   constructor(message: string, options: ErrorOptions = {}) {
     super('STORAGE_ERROR', message, {

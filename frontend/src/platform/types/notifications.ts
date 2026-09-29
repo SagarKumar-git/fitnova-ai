@@ -1,6 +1,6 @@
 /**
  * FitNova AI — Platform Notification Types
- * UI-framework independent notification models and contracts.
+ * UI-framework independent notification models and contracts with priority and deduplication.
  */
 
 export type NotificationType =
@@ -12,7 +12,10 @@ export type NotificationType =
   | 'ai'
   | 'workout'
   | 'nutrition'
-  | 'system';
+  | 'system'
+  | 'adaptive';
+
+export type NotificationPriority = 'high' | 'medium' | 'low';
 
 export interface NotificationItem {
   id: string;
@@ -21,6 +24,8 @@ export interface NotificationItem {
   message: string;
   timestamp: number;
   durationMs?: number;
+  priority?: NotificationPriority;
+  dedupKey?: string;
   metadata?: Record<string, unknown>;
   dismissed: boolean;
 }
@@ -30,6 +35,9 @@ export interface NotificationOptions {
   title: string;
   message: string;
   durationMs?: number;
+  priority?: NotificationPriority;
+  dedupKey?: string;
+  dedupWindowMs?: number;
   metadata?: Record<string, unknown>;
 }
 

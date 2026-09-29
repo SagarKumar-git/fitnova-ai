@@ -1,49 +1,81 @@
 /**
  * FitNova AI — Notification Service
- * UI-framework independent notification manager with TTL expiration and subscriptions.
+ * UI-framework independent notification manager with TTL expiration,
+ * intelligent priority ranking, and key-based deduplication window.
  */
 
 import type {
   NotificationItem,
   NotificationOptions,
   NotificationListener,
+  NotificationPriority,
   UnsubscribeFn,
 } from '../types/index.ts';
 
 export interface NotificationServiceConfig {
   defaultDurationMs?: number;
   maxNotifications?: number;
+  defaultDedupWindowMs?: number;
 }
 
 export class NotificationService {
   private notifications: NotificationItem[] = [];
   private readonly listeners = new Set<NotificationListener>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly dedupHistory = new Map<string, number>();
   private readonly defaultDurationMs: number;
   private readonly maxNotifications: number;
+  private readonly defaultDedupWindowMs: number;
   private counter = 0;
 
   constructor(config: NotificationServiceConfig = {}) {
     this.defaultDurationMs = config.defaultDurationMs ?? 5000;
     this.maxNotifications = config.maxNotifications ?? 20;
+    this.defaultDedupWindowMs = config.defaultDedupWindowMs ?? 5000;
   }
 
   notify(options: NotificationOptions): string {
-    const id = `notif_${Date.now()}_${++this.counter}`;
+    const now = Date.now();
+    const dedupKey = options.dedupKey ?? `${options.type}:${options.title}:${options.message}`;
+    const dedupWindow = options.dedupWindowMs ?? this.defaultDedupWindowMs;
+
+    // Deduplication check: ignore identical notifications within dedup window
+    const lastEmittedAt = this.dedupHistory.get(dedupKey);
+    if (lastEmittedAt && now - lastEmittedAt < dedupWindow) {
+      // Find existing active notification and extend duration
+      const existing = this.notifications.find((n) => n.dedupKey === dedupKey);
+      if (existing) {
+        return existing.id;
+      }
+    }
+    this.dedupHistory.set(dedupKey, now);
+
+    const id = `notif_${now}_${++this.counter}`;
     const duration = options.durationMs !== undefined ? options.durationMs : this.defaultDurationMs;
+
+    // Determine priority
+    const priority: NotificationPriority =
+      options.priority ??
+      (options.type === 'achievement' || options.type === 'error'
+        ? 'high'
+        : options.type === 'warning' || options.type === 'workout'
+        ? 'medium'
+        : 'low');
 
     const item: NotificationItem = {
       id,
       type: options.type,
       title: options.title,
       message: options.message,
-      timestamp: Date.now(),
+      timestamp: now,
       durationMs: duration,
+      priority,
+      dedupKey,
       metadata: options.metadata,
       dismissed: false,
     };
 
-    // Prepend new notification
+    // Prepend new notification (newest first)
     this.notifications = [item, ...this.notifications];
 
     // Enforce max notifications limit
@@ -83,6 +115,7 @@ export class NotificationService {
       this.clearTimer(id);
     }
     this.notifications = [];
+    this.dedupHistory.clear();
     this.notifyListeners();
   }
 
@@ -92,7 +125,6 @@ export class NotificationService {
 
   subscribe(listener: NotificationListener): UnsubscribeFn {
     this.listeners.add(listener);
-    // Immediately emit current state
     listener(this.list());
 
     return () => {

@@ -25,9 +25,10 @@ export const WorkoutEmptyState: React.FC<WorkoutEmptyStateProps> = ({
 }) => {
   return (
     <div
+      role="status"
       className={`bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-8 sm:p-12 text-center flex flex-col items-center justify-center max-w-lg mx-auto ${className}`}
     >
-      <div className="w-16 h-16 rounded-2xl bg-zinc-800/80 border border-zinc-700/60 text-zinc-400 flex items-center justify-center mb-4">
+      <div className="w-16 h-16 rounded-2xl bg-zinc-800/80 border border-zinc-700/60 text-zinc-400 flex items-center justify-center mb-4" aria-hidden="true">
         {icon || <Dumbbell className="w-8 h-8 stroke-[1.5]" />}
       </div>
 
@@ -40,7 +41,7 @@ export const WorkoutEmptyState: React.FC<WorkoutEmptyStateProps> = ({
         <button
           type="button"
           onClick={onAction}
-          className="h-10 px-5 rounded-xl bg-neonLime hover:bg-neonLime/90 text-black font-extrabold text-xs shadow-md transition-all active:scale-95"
+          className="min-h-[44px] px-5 rounded-xl bg-neonLime hover:bg-neonLime/90 text-black font-extrabold text-xs shadow-md transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime cursor-pointer"
         >
           {actionLabel}
         </button>

@@ -150,9 +150,10 @@ def upload_scan(
         logger.info("AUDIT: Image validated")
     except Exception as e:
         # Corrupted images will raise errors inside compress_image_if_large
+        logger.warning(f"Image validation/compression failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Image validation/compression failed: {str(e)}"
+            detail="Invalid or corrupt image file. Please upload a valid JPG, PNG, or WEBP image."
         )
 
     # 6. Save image using swappable StorageProvider

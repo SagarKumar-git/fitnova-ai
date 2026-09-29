@@ -19,6 +19,7 @@ import type {
   AppLifecycleService,
   ConfigService,
   Logger,
+  ObservabilityService,
 } from '../index.ts';
 import type { FeatureFlagKey, NetworkStatus, NotificationItem } from '../types/index.ts';
 
@@ -86,6 +87,10 @@ export function useAnalytics(): AnalyticsService {
 
 export function useTelemetry(): TelemetryService {
   return usePlatform().telemetry;
+}
+
+export function useObservability(): ObservabilityService {
+  return usePlatform().observability;
 }
 
 export function useFeatureFlags(): FeatureFlagService {

@@ -93,6 +93,7 @@ export const FoodAIScanner: React.FC = () => {
   const [logSuccess, setLogSuccess] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const mealTypes = ['Breakfast', 'Pre Workout', 'Post Workout', 'Lunch', 'Dinner', 'Snack'];
 
@@ -414,13 +415,21 @@ export const FoodAIScanner: React.FC = () => {
               accept=".jpg,.jpeg,.png,.webp"
               onChange={handleFileChange}
             />
+            <input 
+              ref={cameraInputRef}
+              type="file" 
+              className="hidden" 
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileChange}
+            />
 
             {uploading ? (
               <div className="py-6 flex flex-col items-center gap-4">
                 <div className="w-10 h-10 border-2 border-neonLime border-t-transparent animate-spin rounded-full"></div>
                 <div>
                   <p className="text-slate-200 font-bold text-sm">Analyzing image...</p>
-                  <p className="text-xs text-zinc-500 mt-1">Applying Pillow quality reduction & matching heuristics</p>
+                  <p className="text-xs text-zinc-500 mt-1">Extracting ingredients, estimating portions, and matching nutritional profile</p>
                 </div>
               </div>
             ) : (
@@ -428,14 +437,24 @@ export const FoodAIScanner: React.FC = () => {
                 <div className="w-12 h-12 bg-zinc-900 rounded-xl flex items-center justify-center border border-zinc-800 text-neonLime mb-4 shadow-lg">
                   <Camera className="w-6 h-6" />
                 </div>
-                <h3 className="font-extrabold text-slate-100 text-sm uppercase tracking-wider">Upload Food Image</h3>
-                <p className="text-xs text-zinc-500 mt-1 mb-4">Drag and drop file here, or click to browse</p>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-slate-300 font-bold text-xs uppercase rounded-xl transition-all duration-150"
-                >
-                  Choose File
-                </button>
+                <h3 className="font-extrabold text-slate-100 text-sm uppercase tracking-wider">Food AI Scanner</h3>
+                <p className="text-xs text-zinc-500 mt-1 mb-4">Capture a photo with your camera or select an image file</p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="px-4 py-2 bg-gradient-to-r from-neonLime to-neonCyan text-black font-extrabold text-xs uppercase rounded-xl shadow-md hover:opacity-95 transition-all flex items-center gap-1.5"
+                  >
+                    <Camera className="w-3.5 h-3.5" /> Take Photo
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-700 text-slate-300 font-bold text-xs uppercase rounded-xl transition-all duration-150"
+                  >
+                    Browse Image
+                  </button>
+                </div>
                 <p className="text-[10px] text-zinc-600 mt-3">Accepts: JPG, JPEG, PNG, WEBP (Max: 10MB)</p>
               </div>
             )}
@@ -514,6 +533,17 @@ export const FoodAIScanner: React.FC = () => {
                   }`}>
                     {activeScan.health_score || 6}
                   </div>
+                </div>
+              </div>
+
+              {/* AI Nutritional Estimation Notice (Requirement 8) */}
+              <div className="p-3 bg-neonCyan/5 border border-neonCyan/20 rounded-xl text-xs text-slate-300 flex items-start gap-2.5">
+                <Sparkles className="w-4 h-4 shrink-0 text-neonCyan mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-bold text-neonCyan block text-[11px] uppercase tracking-wider">AI Nutritional Estimate</span>
+                  <span className="text-[11px] text-zinc-400">
+                    Values are algorithmic estimates based on visual recognition and portion sizing, not exact medical measurements. You can review and adjust ingredients, macros, and portion sizes below before logging to your diary.
+                  </span>
                 </div>
               </div>
 

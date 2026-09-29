@@ -3,7 +3,11 @@ import httpx
 from typing import Tuple, Optional, Any
 from app.config import settings
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
+]
 
 def call_gemini_api(
     prompt: str,
@@ -14,15 +18,13 @@ def call_gemini_api(
     """
     Sends a prompt and optional image bytes to the Gemini API via httpx, handles JSON configuration options,
     tracks token usages, and returns a tuple: (response_text, input_tokens, output_tokens, success).
+    Includes automatic fallback across available Gemini models if a specific model returns 404 or error.
     """
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         print("[Gemini Client] API Key is missing. Falling back to rule-based engine.")
         return None, 0, 0, False
 
-    # Construct the query URL
-    url = f"{GEMINI_API_URL}?key={api_key}"
-    
     parts = []
     if image_bytes and mime_type:
         import base64
@@ -51,40 +53,48 @@ def call_gemini_api(
             "responseMimeType": "application/json"
         }
 
-    try:
-        # Perform request with standard 20 second timeout
-        with httpx.Client(timeout=20.0) as client:
-            response = client.post(url, json=payload, headers={"Content-Type": "application/json"})
+    for model_name in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                response = client.post(url, json=payload, headers={"Content-Type": "application/json"})
+                
+            if response.status_code == 404 or (response.status_code == 400 and "not found" in response.text.lower()):
+                print(f"[Gemini Client] Model {model_name} not available ({response.status_code}). Trying next fallback model...")
+                continue
+                
+            if response.status_code != 200:
+                print(f"[Gemini Client] Non-200 status received from {model_name}: {response.status_code} - {response.text}")
+                continue
+                
+            data = response.json()
             
-        if response.status_code != 200:
-            print(f"[Gemini Client] Non-200 status received: {response.status_code} - {response.text}")
-            return None, 0, 0, False
+            # Verify candidate exists
+            candidates = data.get("candidates", [])
+            if not candidates:
+                print(f"[Gemini Client] Empty response candidates list from {model_name}")
+                continue
+                
+            # Extract text response
+            candidate = candidates[0]
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+            if not parts:
+                print(f"[Gemini Client] Empty response parts list from {model_name}")
+                continue
+                
+            response_text = parts[0].get("text")
             
-        data = response.json()
-        
-        # Verify candidate exists
-        candidates = data.get("candidates", [])
-        if not candidates:
-            print("[Gemini Client] Empty response candidates list")
-            return None, 0, 0, False
+            # Parse token usage metadata
+            usage_metadata = data.get("usageMetadata", {})
+            input_tokens = usage_metadata.get("promptTokenCount", 0)
+            output_tokens = usage_metadata.get("candidatesTokenCount", 0)
             
-        # Extract text response
-        candidate = candidates[0]
-        content = candidate.get("content", {})
-        parts = content.get("parts", [])
-        if not parts:
-            print("[Gemini Client] Empty response parts list")
-            return None, 0, 0, False
+            return response_text, input_tokens, output_tokens, True
             
-        response_text = parts[0].get("text")
-        
-        # Parse token usage metadata
-        usage_metadata = data.get("usageMetadata", {})
-        input_tokens = usage_metadata.get("promptTokenCount", 0)
-        output_tokens = usage_metadata.get("candidatesTokenCount", 0)
-        
-        return response_text, input_tokens, output_tokens, True
-        
-    except Exception as e:
-        print(f"[Gemini Client] API request encountered error: {e}")
-        return None, 0, 0, False
+        except Exception as e:
+            print(f"[Gemini Client] Error calling {model_name}: {e}. Trying next model...")
+            continue
+
+    print("[Gemini Client] All models exhausted or failed. Falling back.")
+    return None, 0, 0, False

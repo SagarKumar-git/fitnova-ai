@@ -22,38 +22,172 @@ import {
   CheckCircle,
 } from 'lucide-react';
 
+import type { WorkoutHistoryEntry, ExerciseHistorySummary } from '../models/WorkoutHistory.ts';
+
+interface HistoryCardProps {
+  entry: WorkoutHistoryEntry;
+  isExpanded: boolean;
+  onToggle: (id: string) => void;
+}
+
+const HistoryCard = React.memo<HistoryCardProps>(({ entry, isExpanded, onToggle }) => {
+  const durationMins = Math.max(1, Math.round(entry.durationSeconds / 60));
+
+  const formattedDate = React.useMemo(() => {
+    return new Date(entry.completedAt).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, [entry.completedAt]);
+
+  const formattedTime = React.useMemo(() => {
+    return new Date(entry.completedAt).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [entry.completedAt]);
+
+  return (
+    <div
+      className={`rounded-2xl border transition-all ${
+        isExpanded
+          ? 'bg-zinc-900 border-neonLime/40 shadow-lg'
+          : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
+      }`}
+    >
+      {/* Summary Bar */}
+      <div
+        onClick={() => onToggle(entry.id)}
+        className="p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
+      >
+        <div>
+          <div className="flex items-center gap-2 mb-1 text-xs text-zinc-400">
+            <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+            <span>{formattedDate}</span>
+            <span>•</span>
+            <span>{formattedTime}</span>
+          </div>
+
+          <h3 className="text-base sm:text-lg font-black text-white">
+            {entry.workoutName}
+          </h3>
+
+          {/* Micro Stats */}
+          <div className="flex items-center gap-4 text-xs text-zinc-400 mt-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-neonLime" />
+              <span>{durationMins}m</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Dumbbell className="w-3.5 h-3.5 text-neonLime" />
+              <span>{Math.round(entry.totalVolume).toLocaleString()} kg</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5 text-neonLime" />
+              <span>{entry.completedSets} sets</span>
+            </div>
+
+            {entry.personalRecordsCount > 0 && (
+              <div className="flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+                <Trophy className="w-3.5 h-3.5" />
+                <span>{entry.personalRecordsCount} PRs</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+          {entry.rating && (
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Star
+                  key={star}
+                  className={`w-3.5 h-3.5 ${
+                    star <= (entry.rating || 0)
+                      ? 'text-amber-400 fill-amber-400'
+                      : 'text-zinc-700'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="w-8 h-8 rounded-lg bg-zinc-800 text-zinc-400 flex items-center justify-center">
+            {isExpanded ? (
+              <ChevronUp className="w-4 h-4 text-neonLime" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Expandable Exercise Details */}
+      {isExpanded && (
+        <div className="px-5 pb-5 pt-2 border-t border-zinc-800/80 space-y-4">
+          {entry.notes && (
+            <div className="text-xs text-zinc-300 italic bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/60">
+              Session note: "{entry.notes}"
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 block">
+              Exercises Logged
+            </span>
+
+            {entry.exercises.map((ex: ExerciseHistorySummary, exIdx: number) => (
+              <div
+                key={ex.exerciseId || exIdx}
+                className="bg-zinc-950/60 border border-zinc-800/60 rounded-xl p-3.5 flex items-center justify-between gap-3"
+              >
+                <div>
+                  <span className="text-xs font-bold text-white block">
+                    {exIdx + 1}. {ex.exerciseName}
+                  </span>
+                  <span className="text-[11px] text-zinc-400 mt-0.5 block">
+                    Best: {ex.bestSet.weight}kg × {ex.bestSet.reps} reps
+                  </span>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-black text-slate-100 block">
+                    {ex.setsCount} Sets
+                  </span>
+                  <span className="text-[11px] text-zinc-400 block mt-0.5">
+                    {Math.round(ex.volume).toLocaleString()} kg
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+HistoryCard.displayName = 'HistoryCard';
+
 export const WorkoutHistory: React.FC = () => {
   const navigate = useNavigate();
   const { history, isLoading } = useWorkoutHistory();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const filteredHistory = history.filter((entry) => {
-    const matchesSearch =
-      searchQuery.trim() === '' ||
-      entry.workoutName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      entry.exercises.some((e) =>
-        e.exerciseName.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    return matchesSearch;
-  });
+  const filteredHistory = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return history;
+    return history.filter(
+      (entry) =>
+        entry.workoutName.toLowerCase().includes(q) ||
+        entry.exercises.some((e) => e.exerciseName.toLowerCase().includes(q))
+    );
+  }, [history, searchQuery]);
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const handleToggle = React.useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-slate-100 p-4 sm:p-6 lg:p-8">
@@ -106,130 +240,14 @@ export const WorkoutHistory: React.FC = () => {
           </div>
         ) : filteredHistory.length > 0 ? (
           <div className="space-y-4">
-            {filteredHistory.map((entry) => {
-              const isExpanded = expandedId === entry.id;
-              const durationMins = Math.max(1, Math.round(entry.durationSeconds / 60));
-
-              return (
-                <div
-                  key={entry.id}
-                  className={`rounded-2xl border transition-all ${
-                    isExpanded
-                      ? 'bg-zinc-900 border-neonLime/40 shadow-lg'
-                      : 'bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700'
-                  }`}
-                >
-                  {/* Summary Bar */}
-                  <div
-                    onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                    className="p-5 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 mb-1 text-xs text-zinc-400">
-                        <Calendar className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>{formatDate(entry.completedAt)}</span>
-                        <span>•</span>
-                        <span>{formatTime(entry.completedAt)}</span>
-                      </div>
-
-                      <h3 className="text-base sm:text-lg font-black text-white">
-                        {entry.workoutName}
-                      </h3>
-
-                      {/* Micro Stats */}
-                      <div className="flex items-center gap-4 text-xs text-zinc-400 mt-2 flex-wrap">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-neonLime" />
-                          <span>{durationMins}m</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Dumbbell className="w-3.5 h-3.5 text-neonLime" />
-                          <span>{Math.round(entry.totalVolume).toLocaleString()} kg</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <CheckCircle className="w-3.5 h-3.5 text-neonLime" />
-                          <span>{entry.completedSets} sets</span>
-                        </div>
-
-                        {entry.personalRecordsCount > 0 && (
-                          <div className="flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
-                            <Trophy className="w-3.5 h-3.5" />
-                            <span>{entry.personalRecordsCount} PRs</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                      {entry.rating && (
-                        <div className="flex items-center gap-1">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <Star
-                              key={star}
-                              className={`w-3.5 h-3.5 ${
-                                star <= (entry.rating || 0)
-                                  ? 'text-amber-400 fill-amber-400'
-                                  : 'text-zinc-700'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="w-8 h-8 rounded-lg bg-zinc-800 text-zinc-400 flex items-center justify-center">
-                        {isExpanded ? (
-                          <ChevronUp className="w-4 h-4 text-neonLime" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expandable Exercise Details */}
-                  {isExpanded && (
-                    <div className="px-5 pb-5 pt-2 border-t border-zinc-800/80 space-y-4">
-                      {entry.notes && (
-                        <div className="text-xs text-zinc-300 italic bg-zinc-950/60 p-3 rounded-xl border border-zinc-800/60">
-                          Session note: "{entry.notes}"
-                        </div>
-                      )}
-
-                      <div className="space-y-3">
-                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 block">
-                          Exercises Logged
-                        </span>
-
-                        {entry.exercises.map((ex, exIdx) => (
-                          <div
-                            key={ex.exerciseId || exIdx}
-                            className="bg-zinc-950/60 border border-zinc-800/60 rounded-xl p-3.5 flex items-center justify-between gap-3"
-                          >
-                            <div>
-                              <span className="text-xs font-bold text-white block">
-                                {exIdx + 1}. {ex.exerciseName}
-                              </span>
-                              <span className="text-[11px] text-zinc-400 mt-0.5 block">
-                                Best: {ex.bestSet.weight}kg × {ex.bestSet.reps} reps
-                              </span>
-                            </div>
-
-                            <div className="text-right shrink-0">
-                              <span className="text-xs font-black text-slate-100 block">
-                                {ex.setsCount} Sets
-                              </span>
-                              <span className="text-[11px] text-zinc-500 font-semibold block">
-                                {Math.round(ex.volume).toLocaleString()} kg vol
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {filteredHistory.map((entry) => (
+              <HistoryCard
+                key={entry.id}
+                entry={entry}
+                isExpanded={expandedId === entry.id}
+                onToggle={handleToggle}
+              />
+            ))}
           </div>
         ) : (
           <WorkoutEmptyState

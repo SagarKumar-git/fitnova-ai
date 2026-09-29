@@ -11,7 +11,12 @@ export type ConflictResolutionStrategy =
   | 'latest_timestamp'
   | 'custom';
 
-export type SyncOperationStatus = 'pending' | 'processing' | 'failed' | 'completed';
+export type SyncOperationStatus =
+  | 'pending'
+  | 'processing'
+  | 'failed'
+  | 'completed'
+  | 'dead_letter';
 
 export interface SyncOperation<TPayload = unknown> {
   id: string;
@@ -20,11 +25,14 @@ export interface SyncOperation<TPayload = unknown> {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   payload?: TPayload;
   headers?: Record<string, string>;
+  idempotencyKey?: string;
   timestamp: number;
+  createdAt: number;
   retryCount: number;
   maxRetries: number;
   status: SyncOperationStatus;
   lastAttemptAt?: number;
+  backoffMs?: number;
   error?: string;
   correlationId?: string;
 }

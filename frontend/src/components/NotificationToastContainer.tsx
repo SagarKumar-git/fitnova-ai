@@ -17,8 +17,9 @@ import {
   Sparkles,
   Dumbbell,
   Apple,
-  Cpu,
   X,
+  BellRing,
+  Zap,
 } from 'lucide-react';
 
 const TYPE_CONFIG: Record<
@@ -74,10 +75,16 @@ const TYPE_CONFIG: Record<
     text: 'text-emerald-300',
   },
   system: {
-    icon: Cpu,
-    border: 'border-zinc-700/50',
-    bg: 'bg-zinc-900/95',
-    text: 'text-zinc-300',
+    icon: BellRing,
+    border: 'border-slate-500/30',
+    bg: 'bg-slate-900/90',
+    text: 'text-slate-200',
+  },
+  adaptive: {
+    icon: Zap,
+    border: 'border-indigo-500/30',
+    bg: 'bg-indigo-900/90',
+    text: 'text-indigo-200',
   },
 };
 
@@ -104,10 +111,10 @@ export const NotificationToastContainer: React.FC = () => {
               exit={{ opacity: 0, x: 20, scale: 0.95 }}
               transition={{ duration: 0.2 }}
               className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl border ${config.border} ${config.bg} backdrop-blur-xl shadow-2xl relative overflow-hidden`}
-              role="status"
+              role={item.type === 'error' ? 'alert' : 'status'}
             >
               <div className={`p-2 rounded-xl bg-zinc-950/60 shrink-0 ${config.text}`}>
-                <Icon className="w-5 h-5" />
+                <Icon className="w-5 h-5" aria-hidden="true" />
               </div>
 
               <div className="flex-1 min-w-0 pr-2">
@@ -122,8 +129,8 @@ export const NotificationToastContainer: React.FC = () => {
               <button
                 type="button"
                 onClick={() => service.dismiss(item.id)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-lg transition-colors cursor-pointer shrink-0"
-                aria-label="Dismiss notification"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center text-zinc-400 hover:text-zinc-200 rounded-xl hover:bg-zinc-800/60 transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime"
+                aria-label={`Dismiss ${item.title} notification`}
               >
                 <X className="w-4 h-4" />
               </button>

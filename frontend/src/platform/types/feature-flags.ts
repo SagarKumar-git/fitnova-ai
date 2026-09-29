@@ -11,7 +11,8 @@ export type StandardFeatureFlagKey =
   | 'nova_voice'
   | 'offline_mode'
   | 'wearable_integration'
-  | 'social_challenges';
+  | 'social_challenges'
+  | 'adaptive_training';
 
 export type FeatureFlagKey = StandardFeatureFlagKey | (string & {});
 

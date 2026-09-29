@@ -18,6 +18,7 @@ const DEFAULT_FLAGS: Record<StandardFeatureFlagKey, boolean> = {
   offline_mode: false,
   wearable_integration: false,
   social_challenges: false,
+  adaptive_training: true,
 };
 
 export interface FeatureFlagServiceConfig {

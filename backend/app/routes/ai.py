@@ -1,9 +1,12 @@
 import uuid
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, date, time
+
+logger = logging.getLogger("fitnova.ai")
 
 from app.database import get_db
 from app.models import User, AIWorkoutPlan, AIMealPlan
@@ -70,9 +73,10 @@ def get_ai_profile_analysis(
             daily_water=round(daily_water, 2)
         )
     except Exception as e:
+        logger.error(f"Failed to calculate biometrics: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to calculate biometrics: {str(e)}"
+            detail="Failed to calculate biometrics. Please check profile inputs and try again."
         )
 
 
@@ -313,14 +317,10 @@ def generate_workout_plan(
         return new_plan
     except Exception as e:
         db.rollback()
+        logger.error(f"Failed to generate/save workout plan: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save workout plan: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate workout plan: {str(e)}"
+            detail="Failed to generate workout plan. Please try again later."
         )
 
 
@@ -369,9 +369,10 @@ def delete_workout_plan(
         db.commit()
         return {"status": "success", "message": "Workout plan deleted successfully."}
     except Exception as e:
+        logger.error(f"Failed to delete workout plan: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete workout plan: {str(e)}"
+            detail="Failed to delete workout plan. Please try again later."
         )
 
 
@@ -570,9 +571,10 @@ def generate_meal_plan(
         # Re-raise HTTPExceptions (like 429)
         raise http_exc
     except Exception as e:
+        logger.error(f"Failed to generate meal plan: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate meal plan: {str(e)}"
+            detail="Failed to generate meal plan. Please try again later."
         )
 
 
@@ -635,9 +637,10 @@ def delete_meal_plan(
         db.commit()
         return {"status": "success", "message": "Meal plan deleted successfully."}
     except Exception as e:
+        logger.error(f"Failed to delete meal plan: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete meal plan: {str(e)}"
+            detail="Failed to delete meal plan. Please try again later."
         )
 
 
@@ -730,9 +733,10 @@ def swap_meal(
         return plan
     except Exception as e:
         db.rollback()
+        logger.error(f"Failed to save swapped meal: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save swapped meal: {str(e)}"
+            detail="Failed to save swapped meal. Please try again later."
         )
 
 

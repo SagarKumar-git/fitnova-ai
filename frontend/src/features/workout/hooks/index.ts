@@ -7,3 +7,5 @@ export * from './useWorkoutDetails.ts';
 export * from './useWorkoutSession.ts';
 export * from './useWorkoutHistory.ts';
 export * from './usePersonalRecords.ts';
+export * from './useNovaWorkoutCoach.ts';
+export * from './useAdaptiveWorkout.ts';

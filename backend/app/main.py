@@ -3,14 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 logger = logging.getLogger("fitnova")
 
 from app.database import engine, Base, SessionLocal
-from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight, FoodRecognitionLog
-from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements, insights, food_scan
+from app.models import Food, MuscleGroup, Exercise, ExerciseMuscle, ExerciseMedia, AIWorkoutPlan, AIMealPlan, Achievement, UserAchievement, AIInsight, FoodRecognitionLog, AdaptiveDecision, AdaptivePreference, SafetyEvent
+from app.routes import auth, profile, dashboard, foods, nutrition, water, meal_plans, exercises, workouts, workout_analytics, admin, ai, achievements, insights, food_scan, health, adaptive_decisions
 
-# Automatically create database tables on startup
-# Base.metadata.create_all(bind=engine)
 def seed_exercise_database():
     """Seeds default muscle groups and exercises if database is empty."""
     db = SessionLocal()
@@ -126,38 +128,29 @@ def seed_exercise_database():
         db.close()
 
 def seed_food_database():
-    """Seeds default foods if database is empty."""
+    """Seeds master food catalog idempotently on startup."""
     db = SessionLocal()
     try:
-        if db.query(Food).count() == 0:
-            default_foods = [
-                # Indian Foods
-                Food(name="Roti", brand="Homemade", serving_size=1.0, serving_unit="piece", calories=120.0, protein=3.5, carbohydrates=22.0, fat=0.5, is_custom=False),
-                Food(name="Dal cooked", brand="Homemade", serving_size=150.0, serving_unit="g", calories=150.0, protein=8.0, carbohydrates=24.0, fat=2.5, is_custom=False),
-                Food(name="Paneer Tikka", brand="Restaurant Style", serving_size=100.0, serving_unit="g", calories=280.0, protein=18.0, carbohydrates=6.0, fat=20.0, is_custom=False),
-                Food(name="Rajma cooked", brand="Homemade", serving_size=150.0, serving_unit="g", calories=180.0, protein=9.0, carbohydrates=30.0, fat=2.0, is_custom=False),
-                Food(name="Chole cooked", brand="Homemade", serving_size=150.0, serving_unit="g", calories=200.0, protein=8.0, carbohydrates=32.0, fat=3.5, is_custom=False),
-                Food(name="Soya Chunks cooked", brand="Nutrela", serving_size=50.0, serving_unit="g", calories=170.0, protein=26.0, carbohydrates=15.0, fat=0.5, is_custom=False),
-                Food(name="Cow Milk", brand="Amul", serving_size=250.0, serving_unit="ml", calories=150.0, protein=8.0, carbohydrates=12.0, fat=8.0, is_custom=False),
-                Food(name="Curd / Dahi", brand="Mother Dairy", serving_size=150.0, serving_unit="g", calories=100.0, protein=5.0, carbohydrates=6.0, fat=6.0, is_custom=False),
-                Food(name="Poha cooked", brand="Homemade", serving_size=150.0, serving_unit="g", calories=220.0, protein=3.5, carbohydrates=44.0, fat=3.0, is_custom=False),
-                Food(name="Upma", brand="Homemade", serving_size=150.0, serving_unit="g", calories=240.0, protein=4.5, carbohydrates=42.0, fat=5.0, is_custom=False),
-                Food(name="Idli", brand="MTR", serving_size=2.0, serving_unit="pieces", calories=120.0, protein=3.0, carbohydrates=26.0, fat=0.5, is_custom=False),
-                Food(name="Dosa Plain", brand="Homemade", serving_size=1.0, serving_unit="piece", calories=150.0, protein=3.0, carbohydrates=28.0, fat=3.0, is_custom=False),
-                Food(name="Chicken Curry", brand="Homemade", serving_size=150.0, serving_unit="g", calories=260.0, protein=24.0, carbohydrates=8.0, fat=14.0, is_custom=False),
-                Food(name="White Rice Cooked", brand="Basmati", serving_size=150.0, serving_unit="g", calories=195.0, protein=4.0, carbohydrates=42.0, fat=0.5, is_custom=False),
-                
-                # Global Standards
-                Food(name="Chicken Breast Cooked", brand="Standard", serving_size=100.0, serving_unit="g", calories=165.0, protein=31.0, carbohydrates=0.0, fat=3.6, is_custom=False),
-                Food(name="Whole Egg", brand="Standard", serving_size=1.0, serving_unit="egg", calories=70.0, protein=6.0, carbohydrates=0.6, fat=5.0, is_custom=False),
-                Food(name="Whey Protein", brand="Optimum Nutrition", serving_size=30.0, serving_unit="g", calories=120.0, protein=24.0, carbohydrates=3.0, fat=1.5, is_custom=False),
-                Food(name="Banana", brand="Standard", serving_size=1.0, serving_unit="medium", calories=105.0, protein=1.3, carbohydrates=27.0, fat=0.3, is_custom=False),
-            ]
-            db.bulk_save_objects(default_foods)
-            db.commit()
-            print("Food database successfully seeded!")
+        from app.services.food_importer import import_food_catalog
+
+        report = import_food_catalog(db)
+        print(f"Master food catalog seeded: {report.get('inserted', 0)} new, {report.get('updated', 0)} enriched, {report.get('skipped_duplicate', 0)} existing.")
     except Exception as e:
-        print(f"Error seeding database: {e}")
+        print(f"Error seeding food database: {e}")
+        # Fallback to minimal set if catalog import fails and db is empty
+        try:
+            if db.query(Food).count() == 0:
+                default_foods = [
+                    Food(name="Roti", brand="Homemade", serving_size=1.0, serving_unit="piece", calories=120.0, protein=3.5, carbohydrates=22.0, fat=0.5, is_custom=False),
+                    Food(name="Dal cooked", brand="Homemade", serving_size=150.0, serving_unit="g", calories=150.0, protein=8.0, carbohydrates=24.0, fat=2.5, is_custom=False),
+                    Food(name="Paneer Tikka", brand="Restaurant Style", serving_size=100.0, serving_unit="g", calories=280.0, protein=18.0, carbohydrates=6.0, fat=20.0, is_custom=False),
+                    Food(name="Chicken Breast Cooked", brand="Standard", serving_size=100.0, serving_unit="g", calories=165.0, protein=31.0, carbohydrates=0.0, fat=3.6, is_custom=False)
+                ]
+                db.bulk_save_objects(default_foods)
+                db.commit()
+                print("Fallback default foods seeded.")
+        except Exception as fb_err:
+            print(f"Fallback food seed failed: {fb_err}")
     finally:
         db.close()
 
@@ -250,21 +243,16 @@ def migrate_ai_meal_plans_schema():
     except Exception as outer_e:
         print(f"Failed to inspect or migrate ai_meal_plans: {outer_e}")
 
-# Surgically initialize only the new AI and achievement tables on startup
+# Safely initialize database tables on startup (non-destructive)
 try:
-    AIWorkoutPlan.__table__.create(bind=engine, checkfirst=True)
-    AIMealPlan.__table__.create(bind=engine, checkfirst=True)
-    Achievement.__table__.create(bind=engine, checkfirst=True)
-    UserAchievement.__table__.create(bind=engine, checkfirst=True)
-    AIInsight.__table__.create(bind=engine, checkfirst=True)
-    FoodRecognitionLog.__table__.create(bind=engine, checkfirst=True)
-    print("AI Coach, Achievement, AI Insight, and Food Recognition tables successfully initialized!")
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    logger.info("Database schema tables verified and initialized successfully.")
     
-    # Run auto-migration check
+    # Run auto-migration check for incremental columns
     migrate_food_recognition_logs_schema()
     migrate_ai_meal_plans_schema()
 except Exception as e:
-    print(f"Error surgically initializing tables: {e}")
+    logger.error(f"Error initializing database schema tables: {e}", exc_info=True)
 
 # Run seeders
 # seed_food_database()
@@ -287,15 +275,21 @@ os.makedirs(os.path.join(static_dir, "uploads"), exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # CORS
+from app.config import settings
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-
     "https://fitnova-ai-9yua.vercel.app",
     "https://fitnova-ai-txvs.vercel.app",
 ]
+if settings.FRONTEND_URL:
+    clean_frontend_url = settings.FRONTEND_URL.strip().rstrip('/')
+    if clean_frontend_url not in origins:
+        origins.append(clean_frontend_url)
+
 # Controlled Vercel wildcard CORS: allow all *.vercel.app preview deploys for this project
 VERCEL_ORIGIN_REGEX = r"https://fitnova-ai[\w-]*\.vercel\.app"
 
@@ -330,11 +324,15 @@ app.include_router(meal_plans.router, prefix="/api")
 app.include_router(exercises.router, prefix="/api")
 app.include_router(workouts.router, prefix="/api")
 app.include_router(workout_analytics.router, prefix="/api")
+app.include_router(workout_analytics.router_plural, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(achievements.router, prefix="/api")
 app.include_router(insights.router, prefix="/api")
+app.include_router(food_scan.router, prefix="/api")
 app.include_router(food_scan.router, prefix="/api/v1")
+app.include_router(health.router, prefix="/api")
+app.include_router(adaptive_decisions.router, prefix="/api")
 
 
 
@@ -357,6 +355,11 @@ def root():
         "health": "/api/health"
     }
 
+@app.get("/health", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 def health_check():
-    return {"status": "healthy", "service": "FitNova AI API"}
+    return {
+        "status": "healthy",
+        "service": "FitNova AI API",
+        "environment": settings.ENVIRONMENT,
+    }

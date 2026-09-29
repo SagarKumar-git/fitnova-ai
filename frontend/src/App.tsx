@@ -1,37 +1,51 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { Login } from './pages/Login';
-import { Register } from './pages/Register';
-import { ProfileSetup } from './pages/ProfileSetup';
-import { Dashboard } from './pages/Dashboard';
-import { Nutrition } from './pages/Nutrition';
-import { MealPlans } from './pages/MealPlans';
-import { Analytics } from './pages/Analytics';
-import { WorkoutDiary } from './pages/WorkoutDiary';
-import { WorkoutTemplates } from './pages/WorkoutTemplates';
-import { ExerciseDatabase } from './pages/ExerciseDatabase';
-import { WorkoutAnalytics } from './pages/WorkoutAnalytics';
-import { AdminDashboard } from './pages/AdminDashboard';
-import { AICoach } from './pages/AICoach';
-import { AIInsights } from './pages/AIInsights';
-import { FoodAIScanner } from './pages/FoodAIScanner';
-import { LandingPage } from './pages/LandingPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { WorkoutProvider } from './features/workout/state/WorkoutContext';
-import {
-  WorkoutHome,
-  WorkoutDetails,
-  ActiveWorkout,
-  WorkoutHistory,
-  WorkoutStats,
-} from './features/workout/pages';
+import { ErrorBoundary } from './features/workout/components/ErrorBoundary';
+
+// Lazy-loaded application pages
+const LandingPage = lazy(() => import('./pages/LandingPage').then((m) => ({ default: m.LandingPage })));
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const Register = lazy(() => import('./pages/Register').then((m) => ({ default: m.Register })));
+const ProfileSetup = lazy(() => import('./pages/ProfileSetup').then((m) => ({ default: m.ProfileSetup })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Nutrition = lazy(() => import('./pages/Nutrition').then((m) => ({ default: m.Nutrition })));
+const MealPlans = lazy(() => import('./pages/MealPlans').then((m) => ({ default: m.MealPlans })));
+const Analytics = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.Analytics })));
+const WorkoutDiary = lazy(() => import('./pages/WorkoutDiary').then((m) => ({ default: m.WorkoutDiary })));
+const WorkoutTemplates = lazy(() => import('./pages/WorkoutTemplates').then((m) => ({ default: m.WorkoutTemplates })));
+const ExerciseDatabase = lazy(() => import('./pages/ExerciseDatabase').then((m) => ({ default: m.ExerciseDatabase })));
+const WorkoutAnalytics = lazy(() => import('./pages/WorkoutAnalytics').then((m) => ({ default: m.WorkoutAnalytics })));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const AICoach = lazy(() => import('./pages/AICoach').then((m) => ({ default: m.AICoach })));
+const AIInsights = lazy(() => import('./pages/AIInsights').then((m) => ({ default: m.AIInsights })));
+const FoodAIScanner = lazy(() => import('./pages/FoodAIScanner').then((m) => ({ default: m.FoodAIScanner })));
+
+// Lazy-loaded Workout OS pages
+const WorkoutHome = lazy(() => import('./features/workout/pages/WorkoutHome').then((m) => ({ default: m.WorkoutHome })));
+const WorkoutDetails = lazy(() => import('./features/workout/pages/WorkoutDetails').then((m) => ({ default: m.WorkoutDetails })));
+const ActiveWorkout = lazy(() => import('./features/workout/pages/ActiveWorkout').then((m) => ({ default: m.ActiveWorkout })));
+const WorkoutHistory = lazy(() => import('./features/workout/pages/WorkoutHistory').then((m) => ({ default: m.WorkoutHistory })));
+const WorkoutStats = lazy(() => import('./features/workout/pages/WorkoutStats').then((m) => ({ default: m.WorkoutStats })));
+
+const PageLoader = () => (
+  <div className="min-h-screen bg-[#020817] flex items-center justify-center">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-10 h-10 border-2 border-[#39FF14] border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(57,255,20,0.3)]" />
+      <span className="text-xs font-semibold text-[#94A3B8] tracking-wider uppercase">Loading FitNova AI...</span>
+    </div>
+  </div>
+);
 
 function App() {
   return (
     <Router>
       <AuthProvider>
         <WorkoutProvider>
-        <Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
           {/* Public Landing Page Route */}
           <Route path="/" element={<LandingPage />} />
 
@@ -101,7 +115,9 @@ function App() {
             path="/workouts" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <WorkoutHome />
+                <ErrorBoundary fallbackMessage="Failed to load Workout Hub.">
+                  <WorkoutHome />
+                </ErrorBoundary>
               </ProtectedRoute>
             } 
           />
@@ -110,7 +126,9 @@ function App() {
             path="/workouts/active" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <ActiveWorkout />
+                <ErrorBoundary fallbackMessage="Failed to load Active Session.">
+                  <ActiveWorkout />
+                </ErrorBoundary>
               </ProtectedRoute>
             } 
           />
@@ -119,7 +137,9 @@ function App() {
             path="/workouts/history" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <WorkoutHistory />
+                <ErrorBoundary fallbackMessage="Failed to load Workout History.">
+                  <WorkoutHistory />
+                </ErrorBoundary>
               </ProtectedRoute>
             } 
           />
@@ -128,7 +148,9 @@ function App() {
             path="/workouts/stats" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <WorkoutStats />
+                <ErrorBoundary fallbackMessage="Failed to load Workout Analytics.">
+                  <WorkoutStats />
+                </ErrorBoundary>
               </ProtectedRoute>
             } 
           />
@@ -137,7 +159,9 @@ function App() {
             path="/workouts/:id" 
             element={
               <ProtectedRoute requireProfile={true}>
-                <WorkoutDetails />
+                <ErrorBoundary fallbackMessage="Failed to load Workout Details.">
+                  <WorkoutDetails />
+                </ErrorBoundary>
               </ProtectedRoute>
             } 
           />
@@ -215,7 +239,8 @@ function App() {
               </ProtectedRoute>
             } 
           />
-        </Routes>
+            </Routes>
+          </Suspense>
         </WorkoutProvider>
       </AuthProvider>
     </Router>

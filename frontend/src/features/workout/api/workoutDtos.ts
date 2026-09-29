@@ -97,6 +97,11 @@ export interface WorkoutSetDto {
   rpe?: number | null;
   rest_seconds?: number | null;
   is_pr?: boolean;
+  is_skipped?: boolean;
+  notes?: string | null;
+  substitute_exercise_id?: string | null;
+  substitute_exercise_name?: string | null;
+  version?: number;
   created_at?: string;
   exercise_name?: string | null;
 }
@@ -112,13 +117,19 @@ export interface WorkoutSessionDto {
   notes?: string | null;
   total_volume: number;
   total_sets: number;
+  status?: string;
+  rating?: number | null;
+  calories?: number;
+  version?: number;
   created_at?: string;
+  updated_at?: string | null;
   sets: WorkoutSetDto[];
 }
 
 export interface WorkoutSessionStartDto {
   name: string;
   template_id?: string | null;
+  idempotency_key?: string;
 }
 
 export interface WorkoutSetCreateDto {
@@ -128,10 +139,40 @@ export interface WorkoutSetCreateDto {
   weight: number;
   rpe?: number | null;
   rest_seconds?: number | null;
+  is_skipped?: boolean;
+  notes?: string;
+  substitute_exercise_id?: string;
+  idempotency_key?: string;
 }
 
 export interface WorkoutSessionFinishDto {
   notes?: string | null;
+  rating?: number | null;
+  calories?: number | null;
+  duration_seconds?: number | null;
+  idempotency_key?: string;
+}
+
+export interface WorkoutSessionUpdateDto {
+  name?: string;
+  notes?: string;
+  rating?: number;
+  calories?: number;
+  duration_seconds?: number;
+  status?: string;
+  version?: number;
+}
+
+export interface WorkoutSessionCancelDto {
+  reason?: string;
+  idempotency_key?: string;
+}
+
+export interface ExerciseSubstitutionRequestDto {
+  original_exercise_id: string;
+  substitute_exercise_id: string;
+  reason?: string;
+  idempotency_key?: string;
 }
 
 // ==========================================

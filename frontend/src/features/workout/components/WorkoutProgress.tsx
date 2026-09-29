@@ -14,23 +14,30 @@ export interface WorkoutProgressProps {
   className?: string;
 }
 
-export const WorkoutProgress: React.FC<WorkoutProgressProps> = ({
+export const WorkoutProgress: React.FC<WorkoutProgressProps> = React.memo(({
   exercises,
   totalVolumeKg = 0,
   className = '',
 }) => {
-  const percentage = calculateWorkoutCompletionPercentage(exercises);
+  const percentage = React.useMemo(() => calculateWorkoutCompletionPercentage(exercises), [exercises]);
 
-  const totalSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
-  const completedSets = exercises.reduce(
-    (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
-    0
-  );
-
-  const totalExercises = exercises.length;
-  const completedExercises = exercises.filter(
-    (ex) => ex.sets.length > 0 && ex.sets.every((s) => s.completed || s.skipped)
-  ).length;
+  const { totalSets, completedSets, totalExercises, completedExercises } = React.useMemo(() => {
+    const tSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+    const cSets = exercises.reduce(
+      (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
+      0
+    );
+    const tEx = exercises.length;
+    const cEx = exercises.filter(
+      (ex) => ex.sets.length > 0 && ex.sets.every((s) => s.completed || s.skipped)
+    ).length;
+    return {
+      totalSets: tSets,
+      completedSets: cSets,
+      totalExercises: tEx,
+      completedExercises: cEx,
+    };
+  }, [exercises]);
 
   return (
     <div className={`bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 ${className}`}>
@@ -83,4 +90,5 @@ export const WorkoutProgress: React.FC<WorkoutProgressProps> = ({
       )}
     </div>
   );
-};
+});
+WorkoutProgress.displayName = 'WorkoutProgress';

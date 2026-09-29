@@ -13,3 +13,8 @@ export * from './WorkoutControls.tsx';
 export * from './SessionSummary.tsx';
 export * from './PRCelebration.tsx';
 export * from './WorkoutEmptyState.tsx';
+export * from './PreWorkoutBrief.tsx';
+export * from './CoachingPanel.tsx';
+export * from './ProgressionSuggestion.tsx';
+export * from './SubstituteExerciseDialog.tsx';
+export * from './FormFeedbackCard.tsx';

@@ -30,9 +30,10 @@ export const WorkoutControls: React.FC<WorkoutControlsProps> = ({
         type="button"
         disabled={!hasPreviousExercise}
         onClick={onPreviousExercise}
-        className="h-12 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
+        aria-label="Go to previous exercise"
+        className="min-h-[48px] px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 text-zinc-300 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 cursor-pointer disabled:cursor-not-allowed"
       >
-        <ChevronLeft className="w-4 h-4" />
+        <ChevronLeft className="w-4 h-4" aria-hidden="true" />
         <span className="hidden sm:inline">Prev Exercise</span>
       </button>
 
@@ -41,18 +42,20 @@ export const WorkoutControls: React.FC<WorkoutControlsProps> = ({
         <button
           type="button"
           onClick={onNextExercise}
-          className="h-12 flex-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/60 text-slate-100 font-extrabold text-sm flex items-center justify-center gap-2 transition-all active:scale-95"
+          aria-label="Go to next exercise"
+          className="min-h-[48px] flex-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/60 text-slate-100 font-extrabold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime cursor-pointer"
         >
           <span>Next Exercise</span>
-          <ChevronRight className="w-4 h-4 text-neonLime" />
+          <ChevronRight className="w-4 h-4 text-neonLime" aria-hidden="true" />
         </button>
       ) : (
         <button
           type="button"
           onClick={onFinishWorkout}
-          className="h-12 flex-1 rounded-xl bg-neonLime hover:bg-neonLime/90 text-black font-black text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all active:scale-95"
+          aria-label={allExercisesCompleted ? 'Finish and log completed workout' : 'Finish session now'}
+          className="min-h-[48px] flex-1 rounded-xl bg-neonLime hover:bg-neonLime/90 text-black font-black text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime cursor-pointer"
         >
-          <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
+          <CheckCircle2 className="w-5 h-5 stroke-[2.5]" aria-hidden="true" />
           <span>{allExercisesCompleted ? 'Finish & Log Workout' : 'Finish Session'}</span>
         </button>
       )}
@@ -62,10 +65,11 @@ export const WorkoutControls: React.FC<WorkoutControlsProps> = ({
         <button
           type="button"
           onClick={onFinishWorkout}
-          className="h-12 px-4 rounded-xl bg-neonLime/10 hover:bg-neonLime/20 border border-neonLime/30 text-neonLime font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0"
+          aria-label="Finish workout early"
+          className="min-h-[48px] px-4 rounded-xl bg-neonLime/10 hover:bg-neonLime/20 border border-neonLime/30 text-neonLime font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime cursor-pointer"
           title="Finish Workout Early"
         >
-          <Flag className="w-4 h-4" />
+          <Flag className="w-4 h-4" aria-hidden="true" />
           <span className="hidden md:inline">Finish</span>
         </button>
       )}

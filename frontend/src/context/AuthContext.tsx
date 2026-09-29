@@ -105,6 +105,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = useCallback((expired = false) => {
     localStorage.removeItem('fitnova_token');
     localStorage.removeItem('fitnova_user');
+    // Clear user-scoped biometric, health, decision, and workout session state
+    localStorage.removeItem('fitnova_health_cache');
+    localStorage.removeItem('fitnova_decision_cache');
+    localStorage.removeItem('fitnova_adaptive_decisions');
+    localStorage.removeItem('fitnova_active_session');
+    localStorage.removeItem('fitnova_session_progress');
     setUser(null);
     setProfile(null);
     if (expired && !expiredFired.current) {

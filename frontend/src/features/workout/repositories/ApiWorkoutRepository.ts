@@ -189,7 +189,11 @@ export class ApiWorkoutRepository implements IWorkoutRepository {
 
   async saveWorkoutSession(session: WorkoutSession): Promise<void> {
     try {
-      await this.api.finishSession({ notes: session.notes });
+      await this.api.finishSession({
+        notes: session.notes,
+        rating: session.rating,
+        duration_seconds: session.durationSeconds,
+      });
     } catch {
       // Local durability maintained in history cache
     }
@@ -232,7 +236,12 @@ export class ApiWorkoutRepository implements IWorkoutRepository {
   async getWorkoutSession(sessionId: string): Promise<WorkoutSession | null> {
     const active = await this.getActiveSession();
     if (active && active.id === sessionId) return active;
-    return null;
+    try {
+      const dto = await this.api.fetchSessionById(sessionId);
+      return mapWorkoutSessionDtoToDomain(dto);
+    } catch {
+      return null;
+    }
   }
 
   // History

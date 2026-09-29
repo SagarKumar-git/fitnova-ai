@@ -4,7 +4,7 @@ import uuid
 import hashlib
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 logger = logging.getLogger("fitnova.vision")
 from PIL import Image, UnidentifiedImageError
@@ -91,11 +91,18 @@ class GeminiVisionProvider(VisionProvider):
     def parse_image(self, file_path: str, filename: str) -> Dict[str, Any]:
         logger.info("Gemini request started")
         
-        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-        relative_path = file_path.lstrip("/")
-        if relative_path.startswith("static/"):
-            relative_path = relative_path[len("static/"):]
-        physical_path = os.path.join(base_dir, relative_path.replace("/", os.sep).replace("\\", os.sep))
+        physical_path = None
+        if os.path.isabs(file_path) and os.path.exists(file_path):
+            physical_path = file_path
+        elif os.path.exists(file_path):
+            physical_path = os.path.abspath(file_path)
+        else:
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+            relative_path = file_path.lstrip("/").lstrip("\\")
+            if relative_path.startswith("static/") or relative_path.startswith("static\\"):
+                relative_path = relative_path[len("static/"):]
+            candidate_path = os.path.join(base_dir, relative_path.replace("/", os.sep).replace("\\", os.sep))
+            physical_path = candidate_path
 
         try:
             with open(physical_path, "rb") as f:
@@ -169,13 +176,18 @@ class GeminiVisionProvider(VisionProvider):
                 raise ValueError("Gemini API call returned failure or empty response")
                 
             clean_text = response_text.strip()
-            if clean_text.startswith("```"):
-                lines = clean_text.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                clean_text = "\n".join(lines).strip()
+            if "```" in clean_text:
+                start = clean_text.find("{")
+                end = clean_text.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    clean_text = clean_text[start:end+1]
+                else:
+                    lines = clean_text.split("\n")
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    clean_text = "\n".join(lines).strip()
                 
             data = json.loads(clean_text)
             
@@ -288,11 +300,116 @@ def compress_image_if_large(file_bytes: bytes, max_allowed_mb: float = 5.0) -> T
     except Exception as e:
         raise RuntimeError("Compression failure") from e
 
+def match_and_scale_nutrition(db: Session, user_id: uuid.UUID, result: Dict[str, Any]) -> Tuple[Optional[uuid.UUID], Dict[str, Any]]:
+    """
+    Cross-references food items detected by Gemini Vision or Heuristics against
+    the verified Food database. If a match is found, scales verified nutritional
+    values by the estimated portion/weight to ensure accurate nutrition numbers.
+    Treats all nutrition values as estimates, not medical measurements.
+    """
+    candidates = []
+    if result.get("food_name"):
+        candidates.append(result["food_name"])
+    if result.get("meal_name") and result["meal_name"] not in candidates:
+        candidates.append(result["meal_name"])
+    for item in result.get("detected_items", []):
+        if item and item not in candidates:
+            candidates.append(item)
+
+    base_filter = or_(Food.is_custom == False, Food.created_by == user_id)
+    matched_food = None
+
+    # Step 1: Look for exact case-insensitive matches on name or common_name
+    for candidate in candidates:
+        cand_norm = candidate.strip()
+        matched_food = db.query(Food).filter(
+            base_filter,
+            or_(
+                Food.name.ilike(cand_norm),
+                Food.common_name.ilike(cand_norm)
+            )
+        ).first()
+        if matched_food:
+            break
+
+    # Step 2: Look for partial / alias match (e.g. 'butter chicken' in aliases or 'roti' in 'tandoori roti')
+    if not matched_food:
+        for candidate in candidates:
+            cand_norm = candidate.strip()
+            if len(cand_norm) < 3 or cand_norm.lower() in ["food", "meal", "plate", "unknown meal"]:
+                continue
+            matched_food = db.query(Food).filter(
+                base_filter,
+                or_(
+                    Food.name.ilike(f"%{cand_norm}%"),
+                    Food.common_name.ilike(f"%{cand_norm}%"),
+                    Food.aliases.ilike(f"%{cand_norm}%")
+                )
+            ).first()
+            if matched_food:
+                break
+
+    # Portion scaling calculation
+    serving_estimation = result.get("serving_size_estimation", "medium").lower()
+    portion_multiplier = 1.0
+    if serving_estimation == "small":
+        portion_multiplier = 0.75
+    elif serving_estimation == "large":
+        portion_multiplier = 1.5
+
+    est_weight = result.get("estimated_weight_g")
+    
+    if matched_food:
+        food_id = matched_food.food_id
+        # Scale based on verified database entry
+        if est_weight and est_weight > 0 and matched_food.serving_size and matched_food.serving_unit.lower() in ["g", "grams"]:
+            scale = max(0.2, min(5.0, est_weight / matched_food.serving_size))
+        else:
+            scale = portion_multiplier
+
+        # Use verified database macro densities scaled to portion
+        result["calories"] = round(float(matched_food.calories) * scale, 1)
+        result["protein"] = round(float(matched_food.protein) * scale, 1)
+        result["carbohydrates"] = round(float(matched_food.carbohydrates) * scale, 1)
+        result["fat"] = round(float(matched_food.fat) * scale, 1)
+
+        result["recommendation"] = (
+            f"Nutritional values cross-referenced with verified database entry for '{matched_food.name}'. "
+            f"Note: All AI values are nutritional estimates, not exact medical measurements."
+        )
+        return food_id, result
+    else:
+        # No DB match found
+        food_name = result.get("food_name", "Scanned Meal")
+        food_id = None
+        if food_name != "Unknown Meal":
+            # Auto-register as custom food for this user so they can log it
+            new_food = Food(
+                name=food_name,
+                serving_size=100.0,
+                serving_unit="g",
+                calories=result.get("calories", 0.0),
+                protein=result.get("protein", 0.0),
+                carbohydrates=result.get("carbohydrates", 0.0),
+                fat=result.get("fat", 0.0),
+                is_custom=True,
+                created_by=user_id
+            )
+            db.add(new_food)
+            db.flush()
+            food_id = new_food.food_id
+
+        result["recommendation"] = (
+            result.get("recommendation", "") + 
+            " Note: All AI values are nutritional estimates, not exact medical measurements."
+        ).strip()
+        return food_id, result
+
 def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: VisionProvider, file_path: str, filename: str) -> None:
     """
     Synchronous processing boundary that simulates a background worker.
     Updates database log status to 'processing', performs estimation,
-    queries food database to link corresponding food items, and saves final values.
+    queries food database to cross-reference food items and scale portion, and saves final values.
     """
     start_time = time.time()
     
@@ -307,32 +424,10 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         # Run recognition provider
         result = provider.parse_image(file_path, filename)
         
+        # Cross-reference with verified database & scale portion
+        food_id, result = match_and_scale_nutrition(db, log.user_id, result)
+        
         food_name = result["food_name"]
-        
-        existing_food = db.query(Food).filter(
-            Food.name.ilike(food_name.strip()),
-            or_(Food.is_custom == False, Food.created_by == log.user_id)
-        ).first()
-        
-        food_id = None
-        if existing_food:
-            food_id = existing_food.food_id
-        else:
-            if food_name != "Unknown Meal":
-                new_food = Food(
-                    name=food_name,
-                    serving_size=100.0,
-                    serving_unit="g",
-                    calories=result["calories"],
-                    protein=result["protein"],
-                    carbohydrates=result["carbohydrates"],
-                    fat=result["fat"],
-                    is_custom=True,
-                    created_by=log.user_id
-                )
-                db.add(new_food)
-                db.flush()
-                food_id = new_food.food_id
 
         # Update log details
         log.food_name = food_name
@@ -353,7 +448,7 @@ def process_food_recognition_job(db: Session, log_id: uuid.UUID, provider: Visio
         log.health_score = result.get("health_score", 6)
         log.nutrition_confidence = result.get("nutrition_confidence", result["confidence_score"])
         log.goal_alignment = result.get("goal_alignment", {"weight_loss": 5, "muscle_gain": 5, "maintenance": 5})
-        log.recommendation = result.get("recommendation", "Heuristic assessment completed.")
+        log.recommendation = result.get("recommendation", "Assessment completed.")
         log.healthier_alternative = result.get("healthier_alternative", "Consider cooking with whole ingredients.")
         log.annotations = result.get("annotations", [])
 

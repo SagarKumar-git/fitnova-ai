@@ -12,6 +12,7 @@ import { usePersonalRecords } from '../hooks/usePersonalRecords.ts';
 import type { WorkoutRecommendation } from '../models/Recommendation.ts';
 import { WorkoutCard } from '../components/WorkoutCard.tsx';
 import { WorkoutEmptyState } from '../components/WorkoutEmptyState.tsx';
+import { PreWorkoutBrief } from '../components/PreWorkoutBrief.tsx';
 import {
   Dumbbell,
   Flame,
@@ -35,6 +36,7 @@ export const WorkoutHome: React.FC = () => {
   const [recommendation, setRecommendation] = useState<WorkoutRecommendation | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showPreWorkoutBrief, setShowPreWorkoutBrief] = useState<boolean>(false);
 
   useEffect(() => {
     let mounted = true;
@@ -221,6 +223,15 @@ export const WorkoutHome: React.FC = () => {
 
                 <button
                   type="button"
+                  onClick={() => setShowPreWorkoutBrief((prev) => !prev)}
+                  className="h-12 px-6 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-neonLime" />
+                  <span>{showPreWorkoutBrief ? 'Hide AI Brief' : 'AI Readiness & Brief'}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => navigate(`/workouts/${recommendedWorkout.id}`)}
                   className="h-12 px-6 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                 >
@@ -229,6 +240,19 @@ export const WorkoutHome: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Pre-Workout Intelligence Briefing */}
+        {showPreWorkoutBrief && recommendedWorkout && (
+          <PreWorkoutBrief
+            workout={recommendedWorkout}
+            onStartWorkout={() => {
+              service.startWorkout({ workoutId: recommendedWorkout.id }).then(() => {
+                navigate('/workouts/active');
+              });
+            }}
+            onClose={() => setShowPreWorkoutBrief(false)}
+          />
         )}
 
         {/* Quick PR Highlights Strip */}

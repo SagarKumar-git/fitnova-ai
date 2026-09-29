@@ -90,6 +90,67 @@ export class SyncManager {
     }
   }
 
+  resolveWorkoutSessionConflict(
+    localSession: Record<string, unknown>,
+    serverSession: Record<string, unknown>,
+    strategy: ConflictResolutionStrategy = this.conflictStrategy
+  ): Record<string, unknown> {
+    if (strategy === 'client_wins') {
+      return localSession;
+    }
+    if (strategy === 'server_wins') {
+      // Preserve local un-synced completed sets so no data is silently lost
+      const localExercises = (localSession.exercises as Array<Record<string, unknown>>) || [];
+      const serverExercises = (serverSession.exercises as Array<Record<string, unknown>>) || [];
+
+      // Merge exercises & sets
+      const mergedExercises = serverExercises.map((se) => ({ ...(se as any), sets: [...((se.sets as Array<Record<string, unknown>>) || [])] }));
+      for (const localEx of localExercises) {
+        const serverEx = mergedExercises.find((se) => (se as any).exerciseId === (localEx as any).exerciseId);
+        if (!serverEx) {
+          mergedExercises.push(localEx as any);
+        } else {
+          const localSets = (localEx.sets as Array<Record<string, unknown>>) || [];
+          const serverSets = (serverEx.sets as Array<Record<string, unknown>>) || [];
+
+          for (const ls of localSets) {
+            const ssIndex = serverSets.findIndex((ss) => ss.setNumber === ls.setNumber);
+            if (ssIndex === -1) {
+              serverSets.push(ls);
+            } else if (ls.completed && !serverSets[ssIndex].completed) {
+              serverSets[ssIndex] = ls;
+            }
+          }
+          serverEx.sets = serverSets;
+        }
+      }
+
+      return {
+        ...serverSession,
+        exercises: mergedExercises,
+        notes: (localSession.notes as string) || (serverSession.notes as string),
+        rating: (localSession.rating as number) ?? (serverSession.rating as number),
+      };
+    }
+    if (strategy === 'latest_timestamp') {
+      const localTs = (localSession.endedAt as number) || (localSession.startedAt as number) || 0;
+      const serverTs = (serverSession.endedAt as number) || (serverSession.startedAt as number) || 0;
+      return localTs >= serverTs ? localSession : serverSession;
+    }
+    if (strategy === 'custom' && this.customResolver) {
+      return this.customResolver(localSession, serverSession) as Record<string, unknown>;
+    }
+    return serverSession;
+  }
+
+  private calculateBackoffMs(retryCount: number): number {
+    const base = 1000;
+    const maxBackoff = 30000;
+    const exponential = Math.min(maxBackoff, base * Math.pow(2, retryCount));
+    const jitter = Math.floor(Math.random() * 500);
+    return exponential + jitter;
+  }
+
   attachNetworkListener(networkService: NetworkService): UnsubscribeFn {
     if (this.networkUnsubscribe) {
       this.networkUnsubscribe();
@@ -106,6 +167,16 @@ export class SyncManager {
   }
 
   async sync(processor?: SyncProcessorFn): Promise<SyncReport> {
+    if (this.status === 'syncing') {
+      return {
+        syncId: `sync_skipped_${Date.now()}`,
+        total: 0,
+        synced: 0,
+        failed: 0,
+        durationMs: 0,
+      };
+    }
+
     const pendingOps = this.offlineManager.getPendingOperations();
     const syncId = `sync_${Date.now()}_${++this.syncCounter}`;
     const startTime = Date.now();
@@ -137,6 +208,13 @@ export class SyncManager {
     const queueInstance = this.offlineManager.getQueueInstance();
 
     for (const op of pendingOps) {
+      // If exponential backoff window has not elapsed yet, skip this operation for now
+      // This ensures transient failures do not block the rest of the queue
+      const now = Date.now();
+      if (op.lastAttemptAt && op.backoffMs && now < op.lastAttemptAt + op.backoffMs) {
+        continue;
+      }
+
       queueInstance.update(op.id, { status: 'processing', lastAttemptAt: Date.now() });
 
       try {
@@ -156,18 +234,26 @@ export class SyncManager {
         } else {
           failedCount++;
           const nextRetry = op.retryCount + 1;
+          const isDeadLetter = nextRetry >= op.maxRetries;
+          const backoffMs = this.calculateBackoffMs(nextRetry);
           queueInstance.update(op.id, {
-            status: nextRetry >= op.maxRetries ? 'failed' : 'pending',
+            status: isDeadLetter ? 'dead_letter' : 'pending',
             retryCount: nextRetry,
+            lastAttemptAt: Date.now(),
+            backoffMs,
             error: result.error ?? 'Sync processing failed',
           });
         }
       } catch (err) {
         failedCount++;
         const nextRetry = op.retryCount + 1;
+        const isDeadLetter = nextRetry >= op.maxRetries;
+        const backoffMs = this.calculateBackoffMs(nextRetry);
         queueInstance.update(op.id, {
-          status: nextRetry >= op.maxRetries ? 'failed' : 'pending',
+          status: isDeadLetter ? 'dead_letter' : 'pending',
           retryCount: nextRetry,
+          lastAttemptAt: Date.now(),
+          backoffMs,
           error: err instanceof Error ? err.message : 'Unknown sync error',
         });
       }

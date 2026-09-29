@@ -16,6 +16,8 @@ describe('Logger & LogSanitizer', () => {
       password: 'MyPassword123!',
       token: 'jwt.token.here',
       apiKey: 'sec_9999',
+      ssn: '123-45-6789',
+      credit_card: '4111-2222-3333-4444',
       metadata: {
         nestedToken: 'nested.secret.val',
         publicCount: 42,
@@ -28,8 +30,14 @@ describe('Logger & LogSanitizer', () => {
     expect(sanitized.password).toBe('[REDACTED]');
     expect(sanitized.token).toBe('[REDACTED]');
     expect(sanitized.apiKey).toBe('[REDACTED]');
+    expect(sanitized.ssn).toBe('[REDACTED]');
+    expect(sanitized.credit_card).toBe('[REDACTED]');
     expect((sanitized.metadata as Record<string, unknown>).nestedToken).toBe('[REDACTED]');
     expect((sanitized.metadata as Record<string, unknown>).publicCount).toBe(42);
+
+    // Test bearer string redaction
+    const bearerStr = sanitizer.sanitize('Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-ID5pcTK4POPreference');
+    expect(bearerStr).toContain('Bearer [REDACTED]');
   });
 
   it('respects log level thresholds and captures entries via transport', () => {

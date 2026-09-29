@@ -16,6 +16,7 @@ import { OfflineManager } from '../offline/OfflineManager.ts';
 import { SyncManager } from '../sync/SyncManager.ts';
 import { AppLifecycleService } from '../lifecycle/AppLifecycleService.ts';
 import { ApiClient } from '../network/ApiClient.ts';
+import { ObservabilityService } from '../observability/ObservabilityService.ts';
 import type { ConfigOverrides } from '../types/index.ts';
 
 export interface PlatformContainerOverrides {
@@ -32,6 +33,7 @@ export interface PlatformContainerOverrides {
   sync?: SyncManager;
   lifecycle?: AppLifecycleService;
   apiClient?: ApiClient;
+  observability?: ObservabilityService;
 }
 
 export class PlatformContainer {
@@ -48,6 +50,7 @@ export class PlatformContainer {
   readonly sync: SyncManager;
   readonly lifecycle: AppLifecycleService;
   readonly apiClient: ApiClient;
+  readonly observability: ObservabilityService;
 
   constructor(overrides: PlatformContainerOverrides = {}) {
     // 1. Configuration
@@ -142,6 +145,7 @@ export class PlatformContainer {
         baseUrl: this.config.apiBaseUrl,
         networkService: this.network,
         telemetryService: this.telemetry,
+        eventBus: this.events,
         logger: this.logger,
         getToken: () => {
           const platformToken = this.storage.get('token');
@@ -153,12 +157,23 @@ export class PlatformContainer {
         },
       });
 
+    // 14. Production Observability (Sprint 5.1)
+    this.observability =
+      overrides.observability ??
+      new ObservabilityService({
+        eventBus: this.events,
+        telemetry: this.telemetry,
+        analytics: this.analytics,
+        logger: this.logger,
+      });
+
     // Set initial lifecycle state to ready
     this.lifecycle.transitionTo('ready');
   }
 
   destroy(): void {
     this.lifecycle.transitionTo('shutdown');
+    this.observability.destroy();
     this.network.destroy();
     this.sync.destroy();
     this.lifecycle.destroy();

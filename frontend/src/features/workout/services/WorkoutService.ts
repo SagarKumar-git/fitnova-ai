@@ -42,6 +42,8 @@ import type { TelemetryService } from '../../../platform/telemetry/TelemetryServ
 import type { Logger } from '../../../platform/logging/Logger.ts';
 import type { OfflineManager } from '../../../platform/offline/OfflineManager.ts';
 import type { SyncManager } from '../../../platform/sync/SyncManager.ts';
+import type { ApiClient } from '../../../platform/network/ApiClient.ts';
+import type { SyncOperation, SyncResult } from '../../../platform/types/index.ts';
 
 export interface WorkoutServiceDependencies {
   repository: IWorkoutRepository;
@@ -52,6 +54,7 @@ export interface WorkoutServiceDependencies {
   logger?: Logger;
   offlineManager?: OfflineManager;
   syncManager?: SyncManager;
+  apiClient?: ApiClient;
 }
 
 export class WorkoutService {
@@ -63,6 +66,9 @@ export class WorkoutService {
   private readonly logger?: Logger;
   private readonly offlineManager?: OfflineManager;
   private readonly syncManager?: SyncManager;
+  private readonly apiClient?: ApiClient;
+  private readonly activeSetLocks: Set<string> = new Set<string>();
+  private isFinalizingSession: boolean = false;
 
   constructor(deps: WorkoutServiceDependencies) {
     this.repository = deps.repository;
@@ -73,11 +79,12 @@ export class WorkoutService {
     this.logger = deps.logger;
     this.offlineManager = deps.offlineManager;
     this.syncManager = deps.syncManager;
+    this.apiClient = deps.apiClient;
 
     if (this.eventBus && this.syncManager && this.offlineManager) {
       this.eventBus.subscribe('NETWORK_ONLINE', async () => {
         if ((this.offlineManager?.getPendingCount() ?? 0) > 0) {
-          const report = await this.syncManager?.sync();
+          const report = await this.syncManager?.sync((op) => this.processSyncOperation(op));
           if (report && report.synced > 0) {
             this.notifications?.notify({
               type: 'system',
@@ -89,6 +96,52 @@ export class WorkoutService {
         }
       });
     }
+  }
+
+  getRepository(): IWorkoutRepository {
+    return this.repository;
+  }
+
+  private async processSyncOperation(op: SyncOperation): Promise<SyncResult> {
+    if (!this.apiClient) {
+      return { operationId: op.id, success: true };
+    }
+
+    try {
+      if (op.type === 'WORKOUT_LOG_SET') {
+        await this.apiClient.request('/workouts/sessions/log-set', {
+          method: 'POST',
+          body: JSON.stringify(op.payload),
+          idempotencyKey: op.idempotencyKey || `set_${op.id}`,
+        });
+      } else if (op.type === 'WORKOUT_FINISH') {
+        await this.apiClient.request('/workouts/sessions/finish', {
+          method: 'POST',
+          body: JSON.stringify(op.payload),
+          idempotencyKey: op.idempotencyKey || `finish_${op.id}`,
+        });
+      } else if (op.endpoint) {
+        await this.apiClient.request(op.endpoint, {
+          method: op.method || 'POST',
+          body: op.payload ? JSON.stringify(op.payload) : undefined,
+          idempotencyKey: op.idempotencyKey || `op_${op.id}`,
+        });
+      }
+      return { operationId: op.id, success: true };
+    } catch (err) {
+      this.logger?.warn(`Failed to process sync operation ${op.id}`, { error: String(err) });
+      return {
+        operationId: op.id,
+        success: false,
+        error: err instanceof Error ? err.message : 'Sync operation failed',
+      };
+    }
+  }
+
+  async syncPendingOperations(): Promise<number> {
+    if (!this.syncManager || !this.offlineManager) return 0;
+    const report = await this.syncManager.sync((op) => this.processSyncOperation(op));
+    return report.synced;
   }
 
   // --------------------------------------------------------------------------
@@ -141,6 +194,89 @@ export class WorkoutService {
     return this.repository.getActiveSession();
   }
 
+  async recoverSession(): Promise<WorkoutSession | null> {
+    const session = await this.repository.getActiveSession();
+    if (!session) return null;
+
+    // Validate recovered session integrity
+    if (
+      !session.id ||
+      !session.workoutId ||
+      !Array.isArray(session.exercises) ||
+      session.exercises.length === 0
+    ) {
+      this.logger?.warn('Active session in storage failed integrity check, clearing corrupted session', { session });
+      await this.repository.clearActiveSession();
+      return null;
+    }
+
+    // Recalculate elapsed time using wall-clock timestamps
+    if (session.status === 'paused' && session.lastPausedAt) {
+      session.durationSeconds = calculateSessionDuration(
+        session.startedAt,
+        session.lastPausedAt,
+        session.pausedDurationMs
+      );
+    } else {
+      session.durationSeconds = calculateSessionDuration(
+        session.startedAt,
+        undefined,
+        session.pausedDurationMs
+      );
+      session.status = 'recovered';
+    }
+
+    // Ensure session total volume is up-to-date
+    session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
+
+    // Ensure current exercise and set indexes are bounded
+    session.currentExerciseIndex = Math.max(
+      0,
+      Math.min(session.currentExerciseIndex ?? 0, session.exercises.length - 1)
+    );
+    const currEx = session.exercises[session.currentExerciseIndex];
+    if (currEx) {
+      session.currentSetIndex = Math.max(
+        0,
+        Math.min(session.currentSetIndex ?? 0, Math.max(0, (currEx.sets?.length ?? 1) - 1))
+      );
+    }
+
+    // Persist normalized session
+    await this.repository.updateWorkoutSession(session);
+
+    this.logger?.info('Workout session recovered successfully', {
+      sessionId: session.id,
+      workoutName: session.workoutName,
+      status: session.status,
+      durationSeconds: session.durationSeconds,
+    });
+
+    return session;
+  }
+
+  async persistSessionProgress(
+    sessionId: string,
+    currentExerciseIndex?: number,
+    currentSetIndex?: number
+  ): Promise<WorkoutSession> {
+    const session = await this.requireActiveSession(sessionId);
+    if (currentExerciseIndex !== undefined) {
+      session.currentExerciseIndex = Math.max(0, Math.min(currentExerciseIndex, session.exercises.length - 1));
+    }
+    if (currentSetIndex !== undefined) {
+      const ex = session.exercises[session.currentExerciseIndex ?? 0];
+      session.currentSetIndex = Math.max(0, Math.min(currentSetIndex, Math.max(0, (ex?.sets?.length ?? 1) - 1)));
+    }
+    session.durationSeconds = calculateSessionDuration(
+      session.startedAt,
+      session.status === 'paused' ? session.lastPausedAt : undefined,
+      session.pausedDurationMs
+    );
+    await this.repository.updateWorkoutSession(session);
+    return session;
+  }
+
   // --------------------------------------------------------------------------
   // Session Lifecycle
   // --------------------------------------------------------------------------
@@ -152,7 +288,14 @@ export class WorkoutService {
     }
 
     const activeSession = await this.repository.getActiveSession();
-    if (activeSession && (activeSession.status === 'active' || activeSession.status === 'paused')) {
+    if (
+      activeSession &&
+      (activeSession.status === 'active' ||
+        activeSession.status === 'paused' ||
+        activeSession.status === 'recovered' ||
+        activeSession.status === 'offline' ||
+        activeSession.status === 'syncing')
+    ) {
       throw new ValidationError(
         'An active workout session is already in progress. Please complete or cancel it first.'
       );
@@ -219,12 +362,22 @@ export class WorkoutService {
 
   async pauseWorkout(sessionId: string): Promise<WorkoutSession> {
     const session = await this.requireActiveSession(sessionId);
-    if (session.status !== 'active') {
+    const canPause =
+      session.status === 'active' ||
+      session.status === 'recovered' ||
+      session.status === 'offline' ||
+      session.status === 'syncing';
+    if (!canPause) {
       throw new ValidationError(`Cannot pause workout in "${session.status}" state`);
     }
 
     session.status = 'paused';
     session.lastPausedAt = Date.now();
+    session.durationSeconds = calculateSessionDuration(
+      session.startedAt,
+      session.lastPausedAt,
+      session.pausedDurationMs
+    );
     await this.repository.updateWorkoutSession(session);
 
     this.eventBus?.emit('WORKOUT_PAUSED', {
@@ -249,6 +402,11 @@ export class WorkoutService {
     }
 
     session.status = 'active';
+    session.durationSeconds = calculateSessionDuration(
+      session.startedAt,
+      undefined,
+      session.pausedDurationMs
+    );
     await this.repository.updateWorkoutSession(session);
 
     this.eventBus?.emit('WORKOUT_RESUMED', {
@@ -266,120 +424,189 @@ export class WorkoutService {
     set: WorkoutSet;
     newPRs: PersonalRecord[];
   }> {
-    const session = await this.requireActiveSession(params.sessionId);
-    if (session.status !== 'active') {
-      throw new ValidationError(`Cannot log set while workout is "${session.status}"`);
+    const lockKey = `${params.sessionId}_${params.exerciseId}_${params.setId}`;
+    if (this.activeSetLocks.has(lockKey)) {
+      this.logger?.warn('Set completion already in progress for set, ignoring concurrent duplicate call', { lockKey });
+      const session = await this.requireActiveSession(params.sessionId);
+      const exercise = session.exercises.find((e) => e.exerciseId === params.exerciseId);
+      const set = exercise?.sets.find((s) => s.id === params.setId);
+      return { session, set: set || ({} as WorkoutSet), newPRs: [] };
     }
 
-    const exercise = session.exercises.find((e) => e.exerciseId === params.exerciseId);
-    if (!exercise) {
-      throw new ValidationError(`Exercise "${params.exerciseId}" not found in current session`);
-    }
-
-    const set = exercise.sets.find((s) => s.id === params.setId);
-    if (!set) {
-      throw new ValidationError(`Set "${params.setId}" not found in exercise`);
-    }
-
-    if (!isSetValid({ actualReps: params.reps, actualWeight: params.weight, rpe: params.rpe })) {
-      throw new ValidationError('Invalid set data: Reps must be 1-150 and weight >= 0kg');
-    }
-
-    set.actualReps = params.reps;
-    set.actualWeight = params.weight;
-    set.rpe = params.rpe;
-    if (params.type) set.type = params.type;
-    set.completed = true;
-    set.completedAt = Date.now();
-    set.skipped = false;
-
-    // Recalculate total volume
-    session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
-    session.durationSeconds = calculateSessionDuration(
-      session.startedAt,
-      Date.now(),
-      session.pausedDurationMs
-    );
-
-    // Detect PRs
-    const existingPRs = await this.repository.getPersonalRecords();
-    const newPRs = detectPersonalRecords(session, existingPRs);
-
-    for (const pr of newPRs) {
-      if (!session.personalRecords.some((p) => p.id === pr.id)) {
-        session.personalRecords.push(pr);
-
-        this.eventBus?.emit('PERSONAL_RECORD_ACHIEVED', {
-          workoutId: session.workoutId,
-          sessionId: session.id,
-          exerciseId: pr.exerciseId,
-          exerciseName: pr.exerciseName,
-          metric: pr.metric,
-          value: pr.value,
-          previousValue: pr.previousValue,
-          timestamp: Date.now(),
-        });
-
-        this.notifications?.notify({
-          type: 'achievement',
-          title: 'New Personal Record!',
-          message: `${pr.exerciseName}: ${pr.value}kg (${pr.metric.toUpperCase()})`,
-          durationMs: 4000,
-        });
-      }
-    }
-
+    this.activeSetLocks.add(lockKey);
     try {
-      await this.repository.updateWorkoutSession(session);
-    } catch {
-      this.offlineManager?.queueOperation({
-        type: 'WORKOUT_LOG_SET',
-        endpoint: '/workouts/sessions/log-set',
-        method: 'POST',
-        payload: {
-          exercise_id: params.exerciseId,
-          set_number: set.setNumber,
+      const session = await this.requireActiveSession(params.sessionId);
+      const isLivableStatus =
+        session.status === 'active' ||
+        session.status === 'recovered' ||
+        session.status === 'offline' ||
+        session.status === 'syncing';
+
+      if (!isLivableStatus) {
+        throw new ValidationError(`Cannot log set while workout is "${session.status}"`);
+      }
+
+      const exercise = session.exercises.find((e) => e.exerciseId === params.exerciseId);
+      if (!exercise) {
+        throw new ValidationError(`Exercise "${params.exerciseId}" not found in current session`);
+      }
+
+      const set = exercise.sets.find((s) => s.id === params.setId);
+      if (!set) {
+        throw new ValidationError(`Set "${params.setId}" not found in exercise`);
+      }
+
+      // Duplicate submission protection: if already completed with identical data, do not emit duplicate events
+      if (
+        set.completed &&
+        set.actualReps === params.reps &&
+        set.actualWeight === params.weight &&
+        set.rpe === params.rpe
+      ) {
+        this.logger?.info('Set already completed with identical values, skipping duplicate emission', {
+          setId: set.id,
           reps: params.reps,
           weight: params.weight,
-          rpe: params.rpe,
-        },
-      });
-    }
+        });
+        return { session, set, newPRs: [] };
+      }
 
-    // Emit SET_COMPLETED
-    this.eventBus?.emit('SET_COMPLETED', {
-      workoutId: session.workoutId,
-      sessionId: session.id,
-      exerciseId: params.exerciseId,
-      setId: params.setId,
-      setNumber: set.setNumber,
-      reps: params.reps,
-      weight: params.weight,
-      rpe: params.rpe,
-      timestamp: Date.now(),
-    });
+      if (!isSetValid({ actualReps: params.reps, actualWeight: params.weight, rpe: params.rpe })) {
+        throw new ValidationError('Invalid set data: Reps must be 1-150 and weight >= 0kg');
+      }
 
-    // Check if exercise completed
-    const allSetsInExerciseCompleted = exercise.sets.every((s) => s.completed || s.skipped);
-    if (allSetsInExerciseCompleted) {
-      this.eventBus?.emit('EXERCISE_COMPLETED', {
+      set.actualReps = params.reps;
+      set.actualWeight = params.weight;
+      set.rpe = params.rpe;
+      if (params.type) set.type = params.type;
+      set.completed = true;
+      set.completedAt = Date.now();
+      set.skipped = false;
+
+      // Recalculate total volume & wall-clock duration
+      session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
+      session.durationSeconds = calculateSessionDuration(
+        session.startedAt,
+        undefined,
+        session.pausedDurationMs
+      );
+
+      // Detect PRs
+      const existingPRs = await this.repository.getPersonalRecords();
+      const newPRs = detectPersonalRecords(session, existingPRs);
+
+      for (const pr of newPRs) {
+        if (!session.personalRecords.some((p) => p.id === pr.id)) {
+          session.personalRecords.push(pr);
+
+          this.eventBus?.emit('PERSONAL_RECORD_ACHIEVED', {
+            workoutId: session.workoutId,
+            sessionId: session.id,
+            exerciseId: pr.exerciseId,
+            exerciseName: pr.exerciseName,
+            metric: pr.metric,
+            value: pr.value,
+            previousValue: pr.previousValue,
+            timestamp: Date.now(),
+          });
+
+          this.notifications?.notify({
+            type: 'achievement',
+            title: 'New Personal Record!',
+            message: `${pr.exerciseName}: ${pr.value}kg (${pr.metric.toUpperCase()})`,
+            durationMs: 4000,
+          });
+        }
+      }
+
+      const setPayload = {
+        exercise_id: params.exerciseId,
+        set_number: set.setNumber,
+        reps: params.reps,
+        weight: params.weight,
+        rpe: params.rpe,
+      };
+      const setDedupKey = `set_${session.id}_${params.exerciseId}_${set.setNumber}`;
+
+      let didFailRepoUpdate = false;
+      try {
+        await this.repository.updateWorkoutSession(session);
+      } catch {
+        didFailRepoUpdate = true;
+        this.offlineManager?.queueOperation({
+          type: 'WORKOUT_LOG_SET',
+          endpoint: '/workouts/sessions/log-set',
+          method: 'POST',
+          payload: setPayload,
+          idempotencyKey: setDedupKey,
+        });
+      }
+
+      if (!didFailRepoUpdate) {
+        if (this.apiClient && (!this.offlineManager || this.offlineManager.isOnline())) {
+          try {
+            await this.apiClient.request('/workouts/sessions/log-set', {
+              method: 'POST',
+              body: JSON.stringify(setPayload),
+              idempotencyKey: setDedupKey,
+            });
+          } catch {
+            this.offlineManager?.queueOperation({
+              type: 'WORKOUT_LOG_SET',
+              endpoint: '/workouts/sessions/log-set',
+              method: 'POST',
+              payload: setPayload,
+              idempotencyKey: setDedupKey,
+            });
+          }
+        } else if (this.offlineManager && !this.offlineManager.isOnline()) {
+          this.offlineManager.queueOperation({
+            type: 'WORKOUT_LOG_SET',
+            endpoint: '/workouts/sessions/log-set',
+            method: 'POST',
+            payload: setPayload,
+            idempotencyKey: setDedupKey,
+          });
+        }
+      }
+
+      // Emit SET_COMPLETED
+      this.eventBus?.emit('SET_COMPLETED', {
         workoutId: session.workoutId,
         sessionId: session.id,
-        exerciseId: exercise.exerciseId,
-        exerciseName: exercise.exerciseName,
-        setsCompleted: exercise.sets.filter((s) => s.completed).length,
+        exerciseId: params.exerciseId,
+        setId: params.setId,
+        setNumber: set.setNumber,
+        reps: params.reps,
+        weight: params.weight,
+        rpe: params.rpe,
         timestamp: Date.now(),
       });
+
+      // Check if exercise completed
+      const allSetsInExerciseCompleted = exercise.sets.every((s) => s.completed || s.skipped);
+      if (allSetsInExerciseCompleted) {
+        this.eventBus?.emit('EXERCISE_COMPLETED', {
+          workoutId: session.workoutId,
+          sessionId: session.id,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          setsCompleted: exercise.sets.filter((s) => s.completed).length,
+          timestamp: Date.now(),
+        });
+      }
+
+      this.analytics?.track('SET_COMPLETED', {
+        workoutId: session.workoutId,
+        exerciseId: params.exerciseId,
+        reps: params.reps,
+        weight: params.weight,
+      });
+
+      return { session, set, newPRs };
+    } finally {
+      this.activeSetLocks.delete(lockKey);
     }
-
-    this.analytics?.track('SET_COMPLETED', {
-      workoutId: session.workoutId,
-      exerciseId: params.exerciseId,
-      reps: params.reps,
-      weight: params.weight,
-    });
-
-    return { session, set, newPRs };
   }
 
   async skipSet(sessionId: string, exerciseId: string, setId: string): Promise<WorkoutSession> {
@@ -391,7 +618,102 @@ export class WorkoutService {
 
     set.skipped = true;
     set.completed = false;
+    session.durationSeconds = calculateSessionDuration(
+      session.startedAt,
+      session.status === 'paused' ? session.lastPausedAt : undefined,
+      session.pausedDurationMs
+    );
     await this.repository.updateWorkoutSession(session);
+    return session;
+  }
+
+  async substituteExercise(params: {
+    sessionId: string;
+    originalExerciseId: string;
+    substituteExercise: Exercise;
+  }): Promise<WorkoutSession> {
+    const session = await this.requireActiveSession(params.sessionId);
+    const exerciseIndex = session.exercises.findIndex((e) => e.exerciseId === params.originalExerciseId);
+    if (exerciseIndex === -1) {
+      throw new ValidationError(`Exercise "${params.originalExerciseId}" not found in current session`);
+    }
+
+    const original = session.exercises[exerciseIndex];
+    const substitute = params.substituteExercise;
+
+    // Preserve completed sets if any were already logged, adapt remaining uncompleted sets
+    const existingCompletedSets = original.sets.filter((s) => s.completed);
+    const targetSets = original.targetSets;
+    const targetReps = original.targetReps;
+    const restSeconds = substitute.defaultRestSeconds || original.restSeconds;
+
+    const newSets: WorkoutSet[] = [];
+
+    // If some sets were already completed, preserve them
+    existingCompletedSets.forEach((s) => newSets.push({ ...s }));
+
+    // Generate remaining sets for the substituted movement
+    const remainingCount = Math.max(1, targetSets - existingCompletedSets.length);
+    for (let i = 0; i < remainingCount; i++) {
+      const setNumber = existingCompletedSets.length + i + 1;
+      newSets.push({
+        id: `s_${Date.now()}_${exerciseIndex}_${setNumber}`,
+        setNumber,
+        type: 'normal',
+        targetReps,
+        targetWeight: original.targetWeight ?? 0,
+        actualReps: undefined,
+        actualWeight: undefined,
+        completed: false,
+        skipped: false,
+      });
+    }
+
+    const updatedExercise: WorkoutExercise = {
+      id: original.id,
+      exerciseId: substitute.id,
+      exerciseName: substitute.name,
+      order: original.order,
+      targetSets,
+      targetReps,
+      targetWeight: original.targetWeight,
+      restSeconds,
+      sets: newSets,
+      notes: `Substituted from ${original.exerciseName}`,
+    };
+
+    session.exercises[exerciseIndex] = updatedExercise;
+    session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
+    session.durationSeconds = calculateSessionDuration(
+      session.startedAt,
+      session.status === 'paused' ? session.lastPausedAt : undefined,
+      session.pausedDurationMs
+    );
+
+    await this.repository.updateWorkoutSession(session);
+
+    this.notifications?.notify({
+      type: 'workout',
+      title: 'Exercise Substituted',
+      message: `Replaced ${original.exerciseName} with ${substitute.name}.`,
+      durationMs: 3000,
+    });
+
+    this.analytics?.track('EXERCISE_SUBSTITUTED', {
+      workoutId: session.workoutId,
+      sessionId: session.id,
+      originalExerciseId: original.exerciseId,
+      originalExerciseName: original.exerciseName,
+      substituteExerciseId: substitute.id,
+      substituteExerciseName: substitute.name,
+    });
+
+    this.logger?.info('Exercise substituted in workout session', {
+      sessionId: session.id,
+      original: original.exerciseName,
+      substitute: substitute.name,
+    });
+
     return session;
   }
 
@@ -399,63 +721,114 @@ export class WorkoutService {
     session: WorkoutSession;
     historyEntry: WorkoutHistoryEntry;
   }> {
-    const session = await this.requireActiveSession(params.sessionId);
-    if (session.status !== 'active' && session.status !== 'paused') {
-      throw new ValidationError(`Cannot finish workout in "${session.status}" state`);
+    if (this.isFinalizingSession) {
+      throw new ValidationError('Workout session finalization already in progress');
     }
+    this.isFinalizingSession = true;
 
-    session.status = 'completed';
-    session.endedAt = Date.now();
-    session.durationSeconds = calculateSessionDuration(
-      session.startedAt,
-      session.endedAt,
-      session.pausedDurationMs
-    );
-    session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
-    if (params.notes) session.notes = params.notes;
-    if (params.rating) session.rating = params.rating;
+    try {
+      const session = await this.requireActiveSession(params.sessionId);
+      const canFinish =
+        session.status === 'active' ||
+        session.status === 'paused' ||
+        session.status === 'recovered' ||
+        session.status === 'offline' ||
+        session.status === 'syncing';
 
-    // Save session to history repository
-    await this.repository.saveWorkoutSession(session);
-    await this.repository.clearActiveSession();
+      if (!canFinish) {
+        throw new ValidationError(`Cannot finish workout in "${session.status}" state`);
+      }
 
-    const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
-    const completedSets = session.exercises.reduce(
-      (sum, e) => sum + e.sets.filter((s) => s.completed).length,
-      0
-    );
-    const caloriesBurned = Math.round(session.durationSeconds * 0.12);
+      session.status = 'completed';
+      session.endedAt = Date.now();
+      session.durationSeconds = calculateSessionDuration(
+        session.startedAt,
+        session.endedAt,
+        session.pausedDurationMs
+      );
+      session.totalVolume = calculateTotalWorkoutVolume(session.exercises);
+      if (params.notes) session.notes = params.notes;
+      if (params.rating) session.rating = params.rating;
 
-    // Emit WORKOUT_COMPLETED
-    this.eventBus?.emit('WORKOUT_COMPLETED', {
-      workoutId: session.workoutId,
-      workoutName: session.workoutName,
-      sessionId: session.id,
-      durationSeconds: session.durationSeconds,
-      totalVolume: session.totalVolume,
-      totalSets,
-      completedSets,
-      caloriesBurned,
-      personalRecordsCount: session.personalRecords.length,
-      timestamp: session.endedAt,
-    });
+      // Save session to history repository
+      await this.repository.saveWorkoutSession(session);
+      await this.repository.clearActiveSession();
 
-    this.analytics?.track('WORKOUT_COMPLETED', {
-      workoutId: session.workoutId,
-      durationSeconds: session.durationSeconds,
-      totalVolume: session.totalVolume,
-      prsCount: session.personalRecords.length,
-    });
+      // Transmit finish to backend or queue offline
+      const caloriesBurned = Math.round(session.durationSeconds * 0.12);
+      const finishPayload = {
+        notes: session.notes,
+        rating: session.rating,
+        calories: caloriesBurned,
+        duration_seconds: session.durationSeconds,
+      };
+      const finishDedupKey = `finish_${session.id}`;
 
-    this.notifications?.notify({
-      type: 'workout',
-      title: 'Workout Completed!',
-      message: `Completed ${session.workoutName}. Total Volume: ${session.totalVolume} kg. Great job!`,
-      durationMs: 4000,
-    });
+      if (this.apiClient && (!this.offlineManager || this.offlineManager.isOnline())) {
+        try {
+          await this.apiClient.request('/workouts/sessions/finish', {
+            method: 'POST',
+            body: JSON.stringify(finishPayload),
+            idempotencyKey: finishDedupKey,
+          });
+        } catch {
+          this.offlineManager?.queueOperation({
+            type: 'WORKOUT_FINISH',
+            endpoint: '/workouts/sessions/finish',
+            method: 'POST',
+            payload: finishPayload,
+            idempotencyKey: finishDedupKey,
+          });
+        }
+      } else if (this.offlineManager) {
+        this.offlineManager.queueOperation({
+          type: 'WORKOUT_FINISH',
+          endpoint: '/workouts/sessions/finish',
+          method: 'POST',
+          payload: finishPayload,
+          idempotencyKey: finishDedupKey,
+        });
+      }
 
-    const [latestHistory] = await this.repository.getWorkoutHistory({ limit: 1 });
-    return { session, historyEntry: latestHistory };
+      const totalSets = session.exercises.reduce((sum, e) => sum + e.sets.length, 0);
+      const completedSets = session.exercises.reduce(
+        (sum, e) => sum + e.sets.filter((s) => s.completed).length,
+        0
+      );
+
+      // Emit WORKOUT_COMPLETED
+      this.eventBus?.emit('WORKOUT_COMPLETED', {
+        workoutId: session.workoutId,
+        workoutName: session.workoutName,
+        sessionId: session.id,
+        durationSeconds: session.durationSeconds,
+        totalVolume: session.totalVolume,
+        totalSets,
+        completedSets,
+        caloriesBurned,
+        personalRecordsCount: session.personalRecords.length,
+        timestamp: session.endedAt,
+      });
+
+      this.analytics?.track('WORKOUT_COMPLETED', {
+        workoutId: session.workoutId,
+        durationSeconds: session.durationSeconds,
+        totalVolume: session.totalVolume,
+        prsCount: session.personalRecords.length,
+      });
+
+      this.notifications?.notify({
+        type: 'workout',
+        title: 'Workout Completed!',
+        message: `Completed ${session.workoutName}. Total Volume: ${session.totalVolume} kg. Great job!`,
+        durationMs: 4000,
+      });
+
+      const [latestHistory] = await this.repository.getWorkoutHistory({ limit: 1 });
+      return { session, historyEntry: latestHistory };
+    } finally {
+      this.isFinalizingSession = false;
+    }
   }
 
   async cancelWorkout(params: CancelSessionParams): Promise<void> {
@@ -488,6 +861,51 @@ export class WorkoutService {
     });
 
     this.logger?.info('Workout session cancelled', { sessionId: params.sessionId });
+  }
+
+  async discardActiveSession(): Promise<void> {
+    const session = await this.repository.getActiveSession();
+    if (!session) return;
+
+    session.status = 'cancelled';
+    session.endedAt = Date.now();
+    await this.repository.clearActiveSession();
+
+    this.eventBus?.emit('WORKOUT_CANCELLED', {
+      workoutId: session.workoutId,
+      sessionId: session.id,
+      reason: 'User discarded workout session',
+      timestamp: session.endedAt,
+    });
+
+    this.notifications?.notify({
+      type: 'info',
+      title: 'Workout Discarded',
+      message: `Workout "${session.workoutName}" was discarded.`,
+      durationMs: 2500,
+    });
+
+    this.logger?.info('Workout session discarded', { sessionId: session.id });
+  }
+
+  async setSessionOffline(sessionId: string): Promise<WorkoutSession | null> {
+    const session = await this.repository.getActiveSession();
+    if (!session || session.id !== sessionId) return null;
+    if (session.status === 'active' || session.status === 'syncing' || session.status === 'recovered') {
+      session.status = 'offline';
+      await this.repository.updateWorkoutSession(session);
+    }
+    return session;
+  }
+
+  async setSessionActive(sessionId: string): Promise<WorkoutSession | null> {
+    const session = await this.repository.getActiveSession();
+    if (!session || session.id !== sessionId) return null;
+    if (session.status === 'offline' || session.status === 'syncing' || session.status === 'recovered') {
+      session.status = 'active';
+      await this.repository.updateWorkoutSession(session);
+    }
+    return session;
   }
 
   private async requireActiveSession(sessionId: string): Promise<WorkoutSession> {

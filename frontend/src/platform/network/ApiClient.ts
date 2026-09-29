@@ -15,6 +15,7 @@ import {
 import type { NetworkService } from './NetworkService.ts';
 import type { TelemetryService } from '../telemetry/TelemetryService.ts';
 import type { Logger } from '../logging/Logger.ts';
+import type { EventBus } from '../events/EventBus.ts';
 
 export interface ApiClientConfig {
   baseUrl?: string;
@@ -22,6 +23,7 @@ export interface ApiClientConfig {
   maxRetries?: number;
   networkService?: NetworkService;
   telemetryService?: TelemetryService;
+  eventBus?: EventBus;
   logger?: Logger;
   getToken?: () => string | null;
   onAuthError?: (statusCode: number) => void;
@@ -32,6 +34,8 @@ export interface RequestOptions extends RequestInit {
   retries?: number;
   skipAuth?: boolean;
   correlationId?: string;
+  idempotencyKey?: string;
+  deduplicate?: boolean;
 }
 
 export class ApiClient {
@@ -40,9 +44,11 @@ export class ApiClient {
   private readonly maxRetries: number;
   private readonly networkService?: NetworkService;
   private readonly telemetryService?: TelemetryService;
+  private readonly eventBus?: EventBus;
   private readonly logger?: Logger;
   private readonly getToken?: () => string | null;
   private readonly onAuthError?: (statusCode: number) => void;
+  private readonly inFlightRequests = new Map<string, Promise<unknown>>();
   private counter = 0;
 
   constructor(config: ApiClientConfig = {}) {
@@ -51,6 +57,7 @@ export class ApiClient {
     this.maxRetries = config.maxRetries ?? 2;
     this.networkService = config.networkService;
     this.telemetryService = config.telemetryService;
+    this.eventBus = config.eventBus;
     this.logger = config.logger;
     this.getToken = config.getToken;
     this.onAuthError = config.onAuthError;
@@ -70,11 +77,38 @@ export class ApiClient {
   }
 
   async request<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const method = (options.method || 'GET').toUpperCase();
+    const shouldDedup = options.deduplicate !== false && (method !== 'GET' || options.deduplicate === true);
+    const bodyStr = typeof options.body === 'string' ? options.body : '';
+    const dedupKey = shouldDedup ? `${method}:${endpoint}:${bodyStr}` : '';
+
+    if (dedupKey && this.inFlightRequests.has(dedupKey)) {
+      return this.inFlightRequests.get(dedupKey) as Promise<T>;
+    }
+
+    const requestPromise = this.executeRequest<T>(endpoint, options, method);
+
+    if (dedupKey) {
+      this.inFlightRequests.set(dedupKey, requestPromise);
+      requestPromise
+        .catch(() => {})
+        .finally(() => {
+          this.inFlightRequests.delete(dedupKey);
+        });
+    }
+
+    return requestPromise;
+  }
+
+  private async executeRequest<T = unknown>(
+    endpoint: string,
+    options: RequestOptions,
+    method: string
+  ): Promise<T> {
     const url = endpoint.startsWith('http://') || endpoint.startsWith('https://')
       ? endpoint
       : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-    const method = (options.method || 'GET').toUpperCase();
     const correlationId = options.correlationId ?? this.generateCorrelationId();
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
     const maxRetries = options.retries !== undefined ? options.retries : this.isIdempotent(method) ? this.maxRetries : 0;
@@ -91,8 +125,22 @@ export class ApiClient {
       }
 
       const controller = new AbortController();
+      let didTimeout = false;
+      let callerAbortListener: (() => void) | undefined;
+
+      // Link caller-provided AbortSignal with internal controller
+      if (options.signal) {
+        if (options.signal.aborted) {
+          controller.abort(options.signal.reason);
+        } else {
+          callerAbortListener = () => controller.abort(options.signal?.reason);
+          options.signal.addEventListener('abort', callerAbortListener, { once: true });
+        }
+      }
+
       const timeoutTimer = setTimeout(() => {
-        controller.abort();
+        didTimeout = true;
+        controller.abort('timeout');
       }, timeoutMs);
 
       const headers: Record<string, string> = {
@@ -100,6 +148,10 @@ export class ApiClient {
         'X-Correlation-ID': correlationId,
         ...(options.headers as Record<string, string>),
       };
+
+      if (options.idempotencyKey && !headers['Idempotency-Key']) {
+        headers['Idempotency-Key'] = options.idempotencyKey;
+      }
 
       if (!options.skipAuth && this.getToken) {
         const token = this.getToken();
@@ -119,6 +171,10 @@ export class ApiClient {
         });
 
         clearTimeout(timeoutTimer);
+        if (options.signal && callerAbortListener) {
+          options.signal.removeEventListener('abort', callerAbortListener);
+        }
+
         const durationMs = Math.round(performance.now() - startTime);
 
         // Record telemetry
@@ -129,6 +185,15 @@ export class ApiClient {
             status: response.status,
             correlationId,
           });
+          if (durationMs > 3000) {
+            this.telemetryService.recordPerformanceIssue({
+              metric: 'API_LATENCY',
+              durationMs,
+              thresholdMs: 3000,
+              sourceModule: 'ApiClient',
+              metadata: { endpoint, method, status: response.status },
+            });
+          }
         }
 
         // Handle 401 / 403
@@ -136,6 +201,23 @@ export class ApiClient {
           if (this.onAuthError) {
             this.onAuthError(401);
           }
+          this.telemetryService?.recordApiFailure({
+            endpoint,
+            method,
+            statusCode: 401,
+            durationMs,
+            error: 'Authentication expired or invalid',
+            correlationId,
+          });
+          this.eventBus?.emit('API_FAILURE', {
+            endpoint,
+            method,
+            statusCode: 401,
+            error: 'Authentication expired or invalid',
+            durationMs,
+            correlationId,
+            timestamp: Date.now(),
+          });
           throw new AuthenticationError('Authentication expired or invalid', {
             metadata: { endpoint, correlationId },
           });
@@ -145,6 +227,23 @@ export class ApiClient {
           if (this.onAuthError) {
             this.onAuthError(403);
           }
+          this.telemetryService?.recordApiFailure({
+            endpoint,
+            method,
+            statusCode: 403,
+            durationMs,
+            error: 'Access forbidden',
+            correlationId,
+          });
+          this.eventBus?.emit('API_FAILURE', {
+            endpoint,
+            method,
+            statusCode: 403,
+            error: 'Access forbidden',
+            durationMs,
+            correlationId,
+            timestamp: Date.now(),
+          });
           throw new AuthorizationError('Access forbidden', {
             metadata: { endpoint, correlationId },
           });
@@ -164,12 +263,56 @@ export class ApiClient {
           try {
             responseBody = await response.json();
           } catch {
-            responseBody = await response.text();
+            try {
+              responseBody = await response.text();
+            } catch {
+              responseBody = null;
+            }
           }
 
-          const message = typeof responseBody === 'object' && responseBody && 'detail' in responseBody
-            ? String((responseBody as { detail: unknown }).detail)
-            : `API request failed with status ${response.status}`;
+          let message = `API request failed with status ${response.status}`;
+          if (typeof responseBody === 'object' && responseBody !== null) {
+            const bodyObj = responseBody as Record<string, unknown>;
+            if (Array.isArray(bodyObj.detail)) {
+              // FastAPI 422 validation errors: [{ loc: ['body', 'field'], msg: 'error msg' }]
+              message = bodyObj.detail
+                .map((item: unknown) => {
+                  if (typeof item === 'object' && item !== null) {
+                    const err = item as { loc?: unknown[]; msg?: string };
+                    const loc = Array.isArray(err.loc)
+                      ? err.loc.filter((l) => l !== 'body').join('.')
+                      : 'field';
+                    return `${loc || 'field'}: ${err.msg || 'Invalid value'}`;
+                  }
+                  return String(item);
+                })
+                .join('; ');
+            } else if (typeof bodyObj.detail === 'string') {
+              message = bodyObj.detail;
+            } else if (typeof bodyObj.message === 'string') {
+              message = bodyObj.message;
+            }
+          } else if (typeof responseBody === 'string' && responseBody.length > 0 && !responseBody.startsWith('<!DOCTYPE')) {
+            message = responseBody;
+          }
+
+          this.telemetryService?.recordApiFailure({
+            endpoint,
+            method,
+            statusCode: response.status,
+            durationMs,
+            error: message,
+            correlationId,
+          });
+          this.eventBus?.emit('API_FAILURE', {
+            endpoint,
+            method,
+            statusCode: response.status,
+            error: message,
+            durationMs,
+            correlationId,
+            timestamp: Date.now(),
+          });
 
           if (response.status === 422 || response.status === 400) {
             throw new ValidationError(message, {
@@ -192,12 +335,22 @@ export class ApiClient {
         return data as T;
       } catch (err) {
         clearTimeout(timeoutTimer);
+        if (options.signal && callerAbortListener) {
+          options.signal.removeEventListener('abort', callerAbortListener);
+        }
+
         lastError = err;
 
+        // Check if aborted by caller or timeout
         if (err instanceof DOMException && err.name === 'AbortError') {
-          lastError = new TimeoutError(`Request timed out after ${timeoutMs}ms`, {
-            metadata: { endpoint, method, correlationId },
-          });
+          if (didTimeout) {
+            lastError = new TimeoutError(`Request timed out after ${timeoutMs}ms`, {
+              metadata: { endpoint, method, correlationId },
+            });
+          } else {
+            // Caller cancellation
+            throw err;
+          }
         }
 
         // Check if we can retry
@@ -216,6 +369,24 @@ export class ApiClient {
             correlationId,
           });
         }
+
+        const failureDurationMs = Math.round(performance.now() - startTime);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.telemetryService?.recordApiFailure({
+          endpoint,
+          method,
+          durationMs: failureDurationMs,
+          error: errorMsg,
+          correlationId,
+        });
+        this.eventBus?.emit('API_FAILURE', {
+          endpoint,
+          method,
+          error: errorMsg,
+          durationMs: failureDurationMs,
+          correlationId,
+          timestamp: Date.now(),
+        });
 
         if (lastError instanceof FitNovaError) {
           throw lastError;

@@ -32,7 +32,7 @@ export class OfflineManager {
   }
 
   queueOperation<T = unknown>(
-    params: Omit<SyncOperation<T>, 'id' | 'timestamp' | 'retryCount' | 'status' | 'maxRetries'> & {
+    params: Omit<SyncOperation<T>, 'id' | 'timestamp' | 'createdAt' | 'retryCount' | 'status' | 'maxRetries'> & {
       maxRetries?: number;
     }
   ): SyncOperation<T> {
@@ -42,6 +42,7 @@ export class OfflineManager {
       ...params,
       id,
       timestamp: Date.now(),
+      createdAt: Date.now(),
       retryCount: 0,
       maxRetries: params.maxRetries ?? 3,
       status: 'pending',
@@ -67,6 +68,23 @@ export class OfflineManager {
     return this.syncQueue.getPending().length;
   }
 
+  getDeadLetterOperations(): SyncOperation[] {
+    return this.syncQueue.getDeadLetter();
+  }
+
+  retryDeadLetter(id: string): boolean {
+    const op = this.syncQueue.getById(id);
+    if (!op || op.status !== 'dead_letter') return false;
+
+    return this.syncQueue.update(id, {
+      status: 'pending',
+      retryCount: 0,
+      backoffMs: undefined,
+      lastAttemptAt: undefined,
+      error: undefined,
+    });
+  }
+
   retryOperation(id: string): boolean {
     const op = this.syncQueue.getById(id);
     if (!op) return false;
@@ -74,6 +92,8 @@ export class OfflineManager {
     return this.syncQueue.update(id, {
       status: 'pending',
       retryCount: 0,
+      backoffMs: undefined,
+      lastAttemptAt: undefined,
       error: undefined,
     });
   }

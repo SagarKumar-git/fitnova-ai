@@ -1,8 +1,11 @@
 import uuid
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+
+logger = logging.getLogger("fitnova.achievements")
 
 from app.database import get_db
 from app.models import (
@@ -184,7 +187,8 @@ def get_user_achievements(
             )
         return response_list
     except Exception as e:
+        logger.error(f"Failed to sync achievements: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync achievements: {str(e)}"
+            detail="Failed to sync achievements. Please try again later."
         )

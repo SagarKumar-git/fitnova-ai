@@ -23,7 +23,7 @@ import type {
   WorkoutHistoryEntry,
   ExerciseHistorySummary,
 } from '../models/index.ts';
-import type { MuscleGroup, Equipment, WorkoutGoal, WorkoutDifficulty } from '../types/enums.ts';
+import type { MuscleGroup, Equipment, WorkoutGoal, WorkoutDifficulty, SessionStatus } from '../types/enums.ts';
 
 const VALID_MUSCLE_GROUPS: MuscleGroup[] = [
   'Chest',
@@ -98,6 +98,13 @@ export function mapExerciseDtoToDomain(dto: ExerciseDto): Exercise {
   };
 }
 
+function sanitizeSessionStatus(status?: string | null, isFinished?: boolean): SessionStatus {
+  if (status === 'completed' || status === 'cancelled' || status === 'paused' || status === 'active') {
+    return status;
+  }
+  return isFinished ? 'completed' : 'active';
+}
+
 /**
  * Maps Workout Set API DTO to WorkoutSet Domain Model.
  */
@@ -111,9 +118,9 @@ export function mapWorkoutSetDtoToDomain(dto: WorkoutSetDto): WorkoutSet {
     actualReps: dto.reps,
     actualWeight: dto.weight,
     rpe: dto.rpe ?? undefined,
-    completed: true,
+    completed: !(dto.is_skipped ?? false),
     completedAt: dto.created_at ? new Date(dto.created_at).getTime() : Date.now(),
-    skipped: false,
+    skipped: dto.is_skipped ?? false,
   };
 }
 
@@ -221,7 +228,7 @@ export function mapWorkoutSessionDtoToDomain(dto: WorkoutSessionDto): WorkoutSes
     id: dto.id,
     workoutId: dto.template_id || dto.id,
     workoutName: dto.name,
-    status: isFinished ? 'completed' : 'active',
+    status: sanitizeSessionStatus(dto.status, isFinished),
     startedAt,
     endedAt,
     durationSeconds: dto.duration_seconds || 0,
@@ -232,6 +239,7 @@ export function mapWorkoutSessionDtoToDomain(dto: WorkoutSessionDto): WorkoutSes
     totalVolume: dto.total_volume,
     personalRecords: [],
     notes: dto.notes ?? undefined,
+    rating: dto.rating ?? undefined,
   };
 }
 

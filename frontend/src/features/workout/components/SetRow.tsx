@@ -11,12 +11,12 @@ export interface SetRowProps {
   set: WorkoutSet;
   exerciseId: string;
   previousBest?: { reps: number; weight: number };
-  onComplete: (reps: number, weight: number, rpe?: number) => void;
+  onComplete: (reps: number, weight: number, rpe?: number) => Promise<void> | void;
   onSkip?: () => void;
   isCurrent?: boolean;
 }
 
-export const SetRow: React.FC<SetRowProps> = ({
+const SetRowComponent: React.FC<SetRowProps> = ({
   set,
   previousBest,
   onComplete,
@@ -30,19 +30,26 @@ export const SetRow: React.FC<SetRowProps> = ({
     set.actualWeight ?? set.targetWeight ?? 0
   );
   const [rpe, setRpe] = useState<number | undefined>(set.rpe);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const handleAdjustWeight = (delta: number) => {
-    if (set.completed) return;
+    if (set.completed || isSubmitting) return;
     setWeight((prev) => Math.max(0, Math.round((prev + delta) * 10) / 10));
   };
 
   const handleAdjustReps = (delta: number) => {
-    if (set.completed) return;
+    if (set.completed || isSubmitting) return;
     setReps((prev) => Math.max(1, prev + delta));
   };
 
-  const handleComplete = () => {
-    onComplete(reps, weight, rpe);
+  const handleComplete = async () => {
+    if (isSubmitting || set.completed || set.skipped) return;
+    setIsSubmitting(true);
+    try {
+      await onComplete(reps, weight, rpe);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getTypeBadge = () => {
@@ -112,15 +119,16 @@ export const SetRow: React.FC<SetRowProps> = ({
       {/* Middle Column: Weight & Reps Steppers */}
       <div className="flex items-center justify-between sm:justify-center gap-3 flex-1">
         {/* Weight Adjuster */}
-        <div className="flex items-center gap-1.5 bg-zinc-800/60 p-1 rounded-lg border border-zinc-700/50">
+        <div className="flex items-center gap-1 bg-zinc-800/60 p-1 rounded-xl border border-zinc-700/50">
           <button
             type="button"
             disabled={set.completed || set.skipped}
             onClick={() => handleAdjustWeight(-2.5)}
-            className="w-7 h-7 rounded bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors"
+            aria-label="Decrease weight by 2.5 kg"
+            className="min-h-[36px] min-w-[36px] rounded-lg bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-neonLime cursor-pointer"
             title="-2.5 kg"
           >
-            <Minus className="w-3.5 h-3.5" />
+            <Minus className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
 
           <div className="flex items-baseline gap-1 px-1 min-w-[54px] justify-center">
@@ -128,34 +136,37 @@ export const SetRow: React.FC<SetRowProps> = ({
               type="number"
               disabled={set.completed || set.skipped}
               value={weight}
+              aria-label="Weight in kilograms"
               onChange={(e) => setWeight(Math.max(0, parseFloat(e.target.value) || 0))}
               className="w-12 bg-transparent text-center font-black text-sm text-slate-100 focus:outline-none focus:text-neonLime"
               step="2.5"
             />
-            <span className="text-[10px] text-zinc-400 font-semibold">kg</span>
+            <span className="text-[10px] text-zinc-400 font-semibold" aria-hidden="true">kg</span>
           </div>
 
           <button
             type="button"
             disabled={set.completed || set.skipped}
             onClick={() => handleAdjustWeight(2.5)}
-            className="w-7 h-7 rounded bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors"
+            aria-label="Increase weight by 2.5 kg"
+            className="min-h-[36px] min-w-[36px] rounded-lg bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-neonLime cursor-pointer"
             title="+2.5 kg"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Reps Adjuster */}
-        <div className="flex items-center gap-1.5 bg-zinc-800/60 p-1 rounded-lg border border-zinc-700/50">
+        <div className="flex items-center gap-1 bg-zinc-800/60 p-1 rounded-xl border border-zinc-700/50">
           <button
             type="button"
             disabled={set.completed || set.skipped}
             onClick={() => handleAdjustReps(-1)}
-            className="w-7 h-7 rounded bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors"
+            aria-label="Decrease reps by 1"
+            className="min-h-[36px] min-w-[36px] rounded-lg bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-neonLime cursor-pointer"
             title="-1 rep"
           >
-            <Minus className="w-3.5 h-3.5" />
+            <Minus className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
 
           <div className="flex items-baseline gap-1 px-1 min-w-[48px] justify-center">
@@ -163,20 +174,22 @@ export const SetRow: React.FC<SetRowProps> = ({
               type="number"
               disabled={set.completed || set.skipped}
               value={reps}
+              aria-label="Reps completed"
               onChange={(e) => setReps(Math.max(1, parseInt(e.target.value) || 1))}
               className="w-10 bg-transparent text-center font-black text-sm text-slate-100 focus:outline-none focus:text-neonLime"
             />
-            <span className="text-[10px] text-zinc-400 font-semibold">reps</span>
+            <span className="text-[10px] text-zinc-400 font-semibold" aria-hidden="true">reps</span>
           </div>
 
           <button
             type="button"
             disabled={set.completed || set.skipped}
             onClick={() => handleAdjustReps(1)}
-            className="w-7 h-7 rounded bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors"
+            aria-label="Increase reps by 1"
+            className="min-h-[36px] min-w-[36px] rounded-lg bg-zinc-700/60 hover:bg-zinc-600 disabled:opacity-30 text-zinc-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-neonLime cursor-pointer"
             title="+1 rep"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -185,10 +198,11 @@ export const SetRow: React.FC<SetRowProps> = ({
           <select
             disabled={set.completed || set.skipped}
             value={rpe ?? ''}
+            aria-label="Rate of Perceived Exertion (RPE)"
             onChange={(e) =>
               setRpe(e.target.value ? parseInt(e.target.value) : undefined)
             }
-            className="bg-zinc-800/80 text-zinc-300 text-xs rounded border border-zinc-700/60 px-1.5 py-1 focus:outline-none focus:border-neonLime"
+            className="bg-zinc-800/80 text-zinc-300 text-xs rounded-lg border border-zinc-700/60 px-2 py-1.5 focus:outline-none focus:border-neonLime"
           >
             <option value="">RPE</option>
             {[6, 7, 8, 9, 10].map((num) => (
@@ -206,27 +220,59 @@ export const SetRow: React.FC<SetRowProps> = ({
           <button
             type="button"
             onClick={onSkip}
-            className="text-zinc-500 hover:text-zinc-400 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+            aria-label={`Skip set ${set.setNumber}`}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-zinc-400 hover:text-zinc-200 rounded-xl hover:bg-zinc-800/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 cursor-pointer"
             title="Skip Set"
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForward className="w-4 h-4" aria-hidden="true" />
           </button>
         )}
 
         <button
           type="button"
-          disabled={set.completed || set.skipped}
+          disabled={set.completed || set.skipped || isSubmitting}
           onClick={handleComplete}
-          className={`h-9 px-4 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+          aria-label={
+            set.completed
+              ? `Set ${set.setNumber} completed`
+              : isSubmitting
+              ? `Saving set ${set.setNumber}...`
+              : `Complete set ${set.setNumber}`
+          }
+          className={`min-h-[44px] px-4 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime ${
             set.completed
               ? 'bg-neonLime/20 text-neonLime border border-neonLime/40 cursor-default'
-              : 'bg-neonLime hover:bg-neonLime/90 text-black shadow-[0_0_10px_rgba(204,255,0,0.2)] active:scale-95'
+              : isSubmitting
+              ? 'bg-neonLime/50 text-black cursor-wait opacity-80'
+              : 'bg-neonLime hover:bg-neonLime/90 text-black shadow-[0_0_10px_rgba(204,255,0,0.2)] active:scale-95 cursor-pointer'
           }`}
         >
-          <Check className="w-4 h-4 stroke-[2.5]" />
-          <span>{set.completed ? 'Done' : 'Complete'}</span>
+          {isSubmitting ? (
+            <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Check className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+          )}
+          <span>{set.completed ? 'Done' : isSubmitting ? 'Saving...' : 'Complete'}</span>
         </button>
       </div>
     </div>
   );
 };
+
+export const SetRow = React.memo<SetRowProps>(SetRowComponent, (prev, next) => {
+  return (
+    prev.set.id === next.set.id &&
+    prev.set.completed === next.set.completed &&
+    prev.set.skipped === next.set.skipped &&
+    prev.set.actualReps === next.set.actualReps &&
+    prev.set.actualWeight === next.set.actualWeight &&
+    prev.set.targetReps === next.set.targetReps &&
+    prev.set.targetWeight === next.set.targetWeight &&
+    prev.set.rpe === next.set.rpe &&
+    prev.isCurrent === next.isCurrent &&
+    prev.exerciseId === next.exerciseId &&
+    prev.previousBest?.reps === next.previousBest?.reps &&
+    prev.previousBest?.weight === next.previousBest?.weight
+  );
+});
+SetRow.displayName = 'SetRow';

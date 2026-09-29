@@ -13,6 +13,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import type { WorkoutSession } from '../models/WorkoutSession.ts';
+import type { Exercise } from '../models/Exercise.ts';
 import { WorkoutService } from '../services/WorkoutService.ts';
 import type { IWorkoutRepository } from '../repositories/IWorkoutRepository.ts';
 import {
@@ -30,6 +31,7 @@ export interface WorkoutContextValue {
   isLoading: boolean;
   restSecondsRemaining: number;
   isRestTimerActive: boolean;
+  syncStatus: 'synced' | 'syncing' | 'offline' | 'pending';
   service: WorkoutService;
   startWorkout: (workoutId: string, notes?: string) => Promise<WorkoutSession>;
   pauseWorkout: () => Promise<void>;
@@ -42,11 +44,18 @@ export interface WorkoutContextValue {
     rpe?: number
   ) => Promise<void>;
   skipSet: (exerciseId: string, setId: string) => Promise<void>;
+  substituteExercise: (
+    originalExerciseId: string,
+    substituteExercise: Exercise
+  ) => Promise<void>;
   finishWorkout: (notes?: string, rating?: number) => Promise<void>;
   cancelWorkout: (reason?: string) => Promise<void>;
   startRestTimer: (seconds: number) => void;
   stopRestTimer: () => void;
   refreshActiveSession: () => Promise<void>;
+  syncPendingOperations: () => Promise<number>;
+  setCurrentExerciseProgress: (exerciseIndex: number, setIndex?: number) => Promise<void>;
+  discardSession: () => Promise<void>;
 }
 
 import { createWorkoutRepository } from '../repositories/repositoryFactory.ts';
@@ -89,6 +98,7 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
       logger: platform.logger ?? logger,
       offlineManager: platform.offline,
       syncManager: platform.sync,
+      apiClient: platform.apiClient,
     });
   }, [repository, eventBus, analytics, notifications, telemetry, platform]);
 
@@ -96,18 +106,129 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [restSecondsRemaining, setRestSecondsRemaining] = useState<number>(0);
   const [isRestTimerActive, setIsRestTimerActive] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'pending'>(() => {
+    if (platform.offline && !platform.offline.isOnline()) return 'offline';
+    if (platform.offline && platform.offline.getPendingCount() > 0) return 'pending';
+    return 'synced';
+  });
 
-  // Restore active session on mount
+  useEffect(() => {
+    const unsubOnline = eventBus.subscribe('NETWORK_ONLINE', async () => {
+      const pendingCount = platform.offline?.getPendingCount() ?? 0;
+      if (pendingCount > 0) {
+        setSyncStatus('syncing');
+        setActiveSession((prev) =>
+          prev && (prev.status === 'offline' || prev.status === 'syncing')
+            ? { ...prev, status: 'syncing' }
+            : prev
+        );
+        try {
+          const synced = await service.syncPendingOperations();
+          setSyncStatus('synced');
+          setActiveSession((prev) => {
+            if (!prev) return prev;
+            if (prev.status === 'syncing' || prev.status === 'offline') {
+              service.setSessionActive(prev.id).catch(() => {});
+              return { ...prev, status: 'active' };
+            }
+            return prev;
+          });
+          if (synced > 0) {
+            notifications.notify({
+              type: 'system',
+              title: 'Workout Synchronized',
+              message: `Successfully synchronized ${synced} offline workout update(s).`,
+              durationMs: 3000,
+            });
+          }
+        } catch {
+          setSyncStatus(pendingCount > 0 ? 'pending' : 'synced');
+          setActiveSession((prev) => {
+            if (prev && prev.status === 'syncing') {
+              service.setSessionOffline(prev.id).catch(() => {});
+              return { ...prev, status: 'offline' };
+            }
+            return prev;
+          });
+        }
+      } else {
+        setSyncStatus('synced');
+        setActiveSession((prev) => {
+          if (!prev) return prev;
+          if (prev.status === 'offline') {
+            service.setSessionActive(prev.id).catch(() => {});
+            return { ...prev, status: 'active' };
+          }
+          return prev;
+        });
+      }
+    });
+
+    const unsubOffline = eventBus.subscribe('NETWORK_OFFLINE', () => {
+      setSyncStatus('offline');
+      setActiveSession((prev) => {
+        if (!prev) return prev;
+        if (prev.status === 'active' || prev.status === 'syncing' || prev.status === 'recovered') {
+          service.setSessionOffline(prev.id).catch(() => {});
+          return { ...prev, status: 'offline' };
+        }
+        return prev;
+      });
+      notifications.notify({
+        type: 'info',
+        title: 'Offline Mode',
+        message: 'Network offline. All workout sets will continue saving locally on your device.',
+        durationMs: 3500,
+      });
+    });
+
+    const unsubSyncStart = eventBus.subscribe('SYNC_STARTED', () => {
+      setSyncStatus('syncing');
+    });
+    const unsubSyncComplete = eventBus.subscribe('SYNC_COMPLETED', () => {
+      setSyncStatus('synced');
+    });
+    const unsubSyncFail = eventBus.subscribe('SYNC_FAILED', () => {
+      setSyncStatus((platform.offline?.getPendingCount() ?? 0) > 0 ? 'pending' : 'synced');
+    });
+
+    return () => {
+      unsubOnline();
+      unsubOffline();
+      unsubSyncStart();
+      unsubSyncComplete();
+      unsubSyncFail();
+    };
+  }, [eventBus, platform.offline, service, notifications]);
+
+  // Restore active session on mount with recovery verification
   const refreshActiveSession = useCallback(async () => {
     try {
-      const session = await service.getActiveSession();
-      setActiveSession(session);
+      const session = await service.recoverSession();
+      if (session) {
+        setActiveSession(session);
+        if (session.status === 'recovered') {
+          notifications.notify({
+            type: 'workout',
+            title: 'Workout Session Recovered',
+            message: `Restored ${session.workoutName} from device storage. You can continue logging sets or finish your workout.`,
+            durationMs: 5000,
+          });
+        }
+      } else {
+        setActiveSession(null);
+      }
     } catch (err) {
       logger.error('Failed to restore active workout session', { error: String(err) });
+      eventBus.emit('WORKOUT_FAILURE', {
+        action: 'restore_active_session',
+        error: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [service]);
+  }, [service, notifications]);
 
   useEffect(() => {
     refreshActiveSession();
@@ -135,24 +256,114 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
     return () => clearInterval(timer);
   }, [isRestTimerActive, restSecondsRemaining, notifications]);
 
-  // Elapsed Session Time Interval
+  // Wall-Clock Elapsed Session Time Interval
   useEffect(() => {
-    if (!activeSession || activeSession.status !== 'active') return;
+    if (!activeSession) return;
+    const isRunning =
+      activeSession.status === 'active' ||
+      activeSession.status === 'recovered' ||
+      activeSession.status === 'offline' ||
+      activeSession.status === 'syncing';
+    if (!isRunning) return;
 
-    const interval = setInterval(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startTimer = () => {
+      if (interval || (typeof document !== 'undefined' && document.hidden)) return;
+      interval = setInterval(() => {
+        setActiveSession((prev) => {
+          if (!prev) return prev;
+          const running =
+            prev.status === 'active' ||
+            prev.status === 'recovered' ||
+            prev.status === 'offline' ||
+            prev.status === 'syncing';
+          if (!running) return prev;
+          const now = Date.now();
+          const durationSeconds = Math.max(
+            0,
+            Math.round((now - prev.startedAt - prev.pausedDurationMs) / 1000)
+          );
+          if (prev.durationSeconds === durationSeconds) return prev;
+          return { ...prev, durationSeconds };
+        });
+      }, 1000);
+    };
+
+    const stopTimer = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    startTimer();
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else {
+        startTimer();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    return () => {
+      stopTimer();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
+  }, [activeSession?.status, activeSession?.startedAt, activeSession?.pausedDurationMs]);
+
+  // Tab Visibility & Focus Reconciliation
+  useEffect(() => {
+    const reconcileDuration = () => {
       setActiveSession((prev) => {
-        if (!prev || prev.status !== 'active') return prev;
+        if (!prev) return prev;
+        const running =
+          prev.status === 'active' ||
+          prev.status === 'recovered' ||
+          prev.status === 'offline' ||
+          prev.status === 'syncing';
+        if (!running) return prev;
         const now = Date.now();
         const durationSeconds = Math.max(
           0,
           Math.round((now - prev.startedAt - prev.pausedDurationMs) / 1000)
         );
+        service.persistSessionProgress(prev.id, prev.currentExerciseIndex, prev.currentSetIndex).catch(() => {});
         return { ...prev, durationSeconds };
       });
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
-  }, [activeSession?.status, activeSession?.startedAt, activeSession?.pausedDurationMs]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (activeSession) {
+          service
+            .persistSessionProgress(activeSession.id, activeSession.currentExerciseIndex, activeSession.currentSetIndex)
+            .catch(() => {});
+        }
+      } else if (document.visibilityState === 'visible') {
+        reconcileDuration();
+      }
+    };
+
+    const handleFocus = () => {
+      reconcileDuration();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [activeSession, service]);
 
   const startRestTimer = useCallback((seconds: number) => {
     setRestSecondsRemaining(seconds);
@@ -166,11 +377,21 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
 
   const startWorkout = useCallback(
     async (workoutId: string, notes?: string) => {
-      const session = await service.startWorkout({ workoutId, notes });
-      setActiveSession(session);
-      return session;
+      try {
+        const session = await service.startWorkout({ workoutId, notes });
+        setActiveSession(session);
+        return session;
+      } catch (err) {
+        eventBus.emit('WORKOUT_FAILURE', {
+          workoutId,
+          action: 'start_workout',
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: Date.now(),
+        });
+        throw err;
+      }
     },
-    [service]
+    [service, eventBus]
   );
 
   const pauseWorkout = useCallback(async () => {
@@ -194,23 +415,34 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
       rpe?: number
     ) => {
       if (!activeSession) return;
-      const { session } = await service.completeSet({
-        sessionId: activeSession.id,
-        exerciseId,
-        setId,
-        reps,
-        weight,
-        rpe,
-      });
-      setActiveSession({ ...session });
+      try {
+        const { session } = await service.completeSet({
+          sessionId: activeSession.id,
+          exerciseId,
+          setId,
+          reps,
+          weight,
+          rpe,
+        });
+        setActiveSession({ ...session });
 
-      // Automatically trigger rest timer from exercise config if available
-      const exercise = session.exercises.find((e) => e.exerciseId === exerciseId);
-      if (exercise && exercise.restSeconds > 0) {
-        startRestTimer(exercise.restSeconds);
+        // Automatically trigger rest timer from exercise config if available
+        const exercise = session.exercises.find((e) => e.exerciseId === exerciseId);
+        if (exercise && exercise.restSeconds > 0) {
+          startRestTimer(exercise.restSeconds);
+        }
+      } catch (err) {
+        eventBus.emit('WORKOUT_FAILURE', {
+          sessionId: activeSession.id,
+          workoutId: activeSession.workoutId,
+          action: 'complete_set',
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: Date.now(),
+        });
+        throw err;
       }
     },
-    [activeSession, service, startRestTimer]
+    [activeSession, service, startRestTimer, eventBus]
   );
 
   const skipSet = useCallback(
@@ -222,14 +454,38 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
     [activeSession, service]
   );
 
+  const substituteExercise = useCallback(
+    async (originalExerciseId: string, substituteExercise: Exercise) => {
+      if (!activeSession) return;
+      const updated = await service.substituteExercise({
+        sessionId: activeSession.id,
+        originalExerciseId,
+        substituteExercise,
+      });
+      setActiveSession({ ...updated });
+    },
+    [activeSession, service]
+  );
+
   const finishWorkout = useCallback(
     async (notes?: string, rating?: number) => {
       if (!activeSession) return;
-      await service.finishWorkout({ sessionId: activeSession.id, notes, rating });
-      setActiveSession(null);
-      stopRestTimer();
+      try {
+        await service.finishWorkout({ sessionId: activeSession.id, notes, rating });
+        setActiveSession(null);
+        stopRestTimer();
+      } catch (err) {
+        eventBus.emit('WORKOUT_FAILURE', {
+          sessionId: activeSession.id,
+          workoutId: activeSession.workoutId,
+          action: 'finish_workout',
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: Date.now(),
+        });
+        throw err;
+      }
     },
-    [activeSession, service, stopRestTimer]
+    [activeSession, service, stopRestTimer, eventBus]
   );
 
   const cancelWorkout = useCallback(
@@ -242,40 +498,69 @@ export const WorkoutProvider: React.FC<WorkoutProviderProps> = ({
     [activeSession, service, stopRestTimer]
   );
 
+  const discardSession = useCallback(async () => {
+    await service.discardActiveSession();
+    setActiveSession(null);
+    stopRestTimer();
+  }, [service, stopRestTimer]);
+
+  const syncPendingOperations = useCallback(async () => {
+    return service.syncPendingOperations();
+  }, [service]);
+
+  const setCurrentExerciseProgress = useCallback(
+    async (exerciseIndex: number, setIndex?: number) => {
+      if (!activeSession) return;
+      const updated = await service.persistSessionProgress(activeSession.id, exerciseIndex, setIndex);
+      setActiveSession({ ...updated });
+    },
+    [activeSession, service]
+  );
+
   const value = useMemo<WorkoutContextValue>(
     () => ({
       activeSession,
       isLoading,
       restSecondsRemaining,
       isRestTimerActive,
+      syncStatus,
       service,
       startWorkout,
       pauseWorkout,
       resumeWorkout,
       completeSet,
       skipSet,
+      substituteExercise,
       finishWorkout,
       cancelWorkout,
       startRestTimer,
       stopRestTimer,
       refreshActiveSession,
+      syncPendingOperations,
+      setCurrentExerciseProgress,
+      discardSession,
     }),
     [
       activeSession,
       isLoading,
       restSecondsRemaining,
       isRestTimerActive,
+      syncStatus,
       service,
       startWorkout,
       pauseWorkout,
       resumeWorkout,
       completeSet,
       skipSet,
+      substituteExercise,
       finishWorkout,
       cancelWorkout,
       startRestTimer,
       stopRestTimer,
       refreshActiveSession,
+      syncPendingOperations,
+      setCurrentExerciseProgress,
+      discardSession,
     ]
   );
 

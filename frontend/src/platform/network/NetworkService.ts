@@ -122,6 +122,10 @@ export class NetworkService {
     }
   }
 
+  setOnline(isOnline: boolean): void {
+    this.updateStatus(isOnline);
+  }
+
   isOnline(): boolean {
     return this.status.isOnline;
   }

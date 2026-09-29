@@ -47,8 +47,12 @@ export type SessionStatus =
   | 'preparing'
   | 'active'
   | 'paused'
+  | 'offline'
+  | 'syncing'
+  | 'recovered'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'failed';
 
 export type SetType =
   | 'warmup'

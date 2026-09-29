@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
 import uuid
+import logging
 from datetime import datetime, date, timedelta, time
+
+logger = logging.getLogger("fitnova.admin")
 
 from app.database import get_db
 from app.models import User, FoodLog, MealPlan, Exercise, WorkoutSession, AIWorkoutPlan, AIMealPlan, UserAchievement, WorkoutStreak, FoodRecognitionLog
@@ -57,9 +60,10 @@ def get_admin_stats(
             total_achievements=total_achievements
         )
     except Exception as e:
+        logger.error(f"Failed to fetch admin stats: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch admin stats: {str(e)}"
+            detail="Failed to fetch admin stats. Please try again later."
         )
 
 @router.get("/users", response_model=List[AdminUserResponse])
@@ -115,9 +119,10 @@ def get_admin_users(
             for u in users_with_counts
         ]
     except Exception as e:
+        logger.error(f"Failed to fetch admin users: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch admin users: {str(e)}"
+            detail="Failed to fetch admin users. Please try again later."
         )
 
 @router.get("/top-users", response_model=List[AdminUserResponse])
@@ -172,9 +177,10 @@ def get_top_active_users(
             for u in top_users
         ]
     except Exception as e:
+        logger.error(f"Failed to fetch top active users: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch top active users: {str(e)}"
+            detail="Failed to fetch top active users. Please try again later."
         )
 
 @router.get("/analytics", response_model=AdminAnalyticsResponse)
@@ -320,9 +326,10 @@ def get_admin_analytics(
     except HTTPException as he:
         raise he
     except Exception as e:
+        logger.error(f"Failed to fetch admin analytics: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch admin analytics: {str(e)}"
+            detail="Failed to fetch admin analytics. Please try again later."
         )
 
 @router.get("/leaderboards", response_model=AdminLeaderboardsResponse)
@@ -421,9 +428,10 @@ def get_admin_leaderboards(
             top_streaks=[LeaderboardUser(id=u.id, name=u.name, email=u.email, score=u.score) for u in top_streaks]
         )
     except Exception as e:
+        logger.error(f"Failed to fetch admin leaderboards: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch admin leaderboards: {str(e)}"
+            detail="Failed to fetch admin leaderboards. Please try again later."
         )
 
 @router.put("/users/{user_id}/role")
@@ -448,9 +456,10 @@ def update_user_role(
     except HTTPException as he:
         raise he
     except Exception as e:
+        logger.error(f"Failed to update user role: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update user role: {str(e)}"
+            detail="Failed to update user role. Please try again later."
         )
 
 
@@ -548,9 +557,10 @@ def get_admin_food_scan_analytics(
             daily_activity=daily_activity
         )
     except Exception as e:
+        logger.error(f"Failed to fetch food scan analytics: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch food scan analytics: {str(e)}"
+            detail="Failed to fetch food scan analytics. Please try again later."
         )
 
 
@@ -565,9 +575,10 @@ def get_admin_ai_analytics(
         from app.ai_logger import get_ai_analytics_summary
         return get_ai_analytics_summary()
     except Exception as e:
+        logger.error(f"Failed to fetch AI usage analytics: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch AI usage analytics: {str(e)}"
+            detail="Failed to fetch AI usage analytics. Please try again later."
         )
 
 

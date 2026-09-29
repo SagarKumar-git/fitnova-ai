@@ -10,6 +10,7 @@ export interface ExerciseHistorySummary {
   bestSet: {
     reps: number;
     weight: number;
+    rpe?: number;
   };
   volume: number;
 }

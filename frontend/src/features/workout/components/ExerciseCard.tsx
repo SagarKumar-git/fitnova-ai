@@ -26,9 +26,12 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
 
   return (
     <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4 transition-all hover:border-zinc-700/80">
-      <div
+      <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-start justify-between gap-3 cursor-pointer select-none"
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${exercise.name}`}
+        className="w-full flex items-start justify-between gap-3 text-left cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-neonLime rounded-lg"
       >
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -61,15 +64,14 @@ export const ExerciseCard: React.FC<ExerciseCardProps> = ({
             </div>
           )}
 
-          <button
-            type="button"
-            className="p-1 text-zinc-400 hover:text-slate-100 transition-colors"
-            aria-label={isExpanded ? 'Collapse exercise details' : 'Expand exercise details'}
+          <div
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-zinc-400 hover:text-slate-100 transition-colors"
+            aria-hidden="true"
           >
             {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
+          </div>
         </div>
-      </div>
+      </button>
 
       {/* Rest Duration Bar */}
       <div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-zinc-800/40 text-xs text-zinc-400">
