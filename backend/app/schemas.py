@@ -763,6 +763,10 @@ class DetectedFoodItem(BaseModel):
     matched_food_name: Optional[str] = None
     is_database_match: Optional[bool] = False
     bounding_box: Optional[List[int]] = None
+    evidence: Optional[str] = None
+    specificity_level: Optional[str] = "generic"
+    recognition_confidence: Optional[float] = None
+    database_match_confidence: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -809,8 +813,12 @@ class FoodRecognitionResponse(BaseModel):
     confidence_per_item: Optional[Dict[str, float]] = None
     serving_size_estimation: Optional[str] = None
     estimated_weight_g: Optional[float] = None
+    estimated_weight_range: Optional[str] = None
     health_score: Optional[int] = None
     nutrition_confidence: Optional[float] = None
+    recognition_confidence: Optional[float] = None
+    database_match_confidence: Optional[float] = None
+    overall_grounded_confidence: Optional[float] = None
     goal_alignment: Optional[Dict[str, int]] = None
     recommendation: Optional[str] = None
     healthier_alternative: Optional[str] = None

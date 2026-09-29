@@ -28,6 +28,10 @@ export interface DetectedFoodItem {
   matched_food_name?: string | null;
   is_database_match?: boolean;
   bounding_box?: [number, number, number, number] | null;
+  evidence?: string | null;
+  specificity_level?: string | null;
+  recognition_confidence?: number | null;
+  database_match_confidence?: number | null;
 }
 
 interface FoodScanLog {
@@ -51,8 +55,12 @@ interface FoodScanLog {
   confidence_per_item?: Record<string, number> | null;
   serving_size_estimation?: string | null;
   estimated_weight_g?: number | null;
+  estimated_weight_range?: string | null;
   health_score?: number | null;
   nutrition_confidence?: number | null;
+  recognition_confidence?: number | null;
+  database_match_confidence?: number | null;
+  overall_grounded_confidence?: number | null;
   goal_alignment?: {
     weight_loss?: number;
     muscle_gain?: number;
@@ -64,6 +72,8 @@ interface FoodScanLog {
     name: string;
     confidence: number;
     bounding_box: [number, number, number, number];
+    evidence?: string;
+    specificity_level?: string;
   }> | null;
 
   // Multi-food structured fields
@@ -126,12 +136,15 @@ export const FoodAIScanner: React.FC = () => {
   const mealTypes = ['Breakfast', 'Pre Workout', 'Post Workout', 'Lunch', 'Dinner', 'Snack'];
 
   const parseFoodsFromScan = (scan: FoodScanLog): DetectedFoodItem[] => {
+    if (scan.meal_name === 'No Food Detected' || (scan.calories === 0 && (!scan.foods || scan.foods.length === 0))) {
+      return [];
+    }
     if (scan.foods && scan.foods.length > 0) {
       return scan.foods;
     }
     if (scan.annotations && scan.annotations.length > 0) {
       const annFoods = scan.annotations
-        .filter((a: any) => a && typeof a === 'object' && a.name)
+        .filter((a: any) => a && typeof a === 'object' && a.name && a.name !== 'No Food Detected')
         .map((a: any) => ({
           name: a.name,
           portion: a.portion || "1 serving",
@@ -144,13 +157,19 @@ export const FoodAIScanner: React.FC = () => {
           food_id: a.food_id || null,
           matched_food_name: a.matched_food_name || null,
           is_database_match: Boolean(a.is_database_match),
-          bounding_box: a.bounding_box || null
+          bounding_box: a.bounding_box || null,
+          evidence: a.evidence || null,
+          specificity_level: a.specificity_level || "generic",
+          recognition_confidence: a.recognition_confidence || a.confidence || 0.85,
+          database_match_confidence: a.database_match_confidence || (a.is_database_match ? 1.0 : 0.5)
         }));
       if (annFoods.length > 0) return annFoods;
     }
     if (scan.detected_items && scan.detected_items.length > 0) {
-      const count = scan.detected_items.length;
-      return scan.detected_items.map((name) => ({
+      const validItems = scan.detected_items.filter((name) => name && name !== 'No Food Detected');
+      if (validItems.length === 0) return [];
+      const count = validItems.length;
+      return validItems.map((name) => ({
         name,
         portion: scan.serving_size_estimation || "1 serving",
         estimated_weight_g: Math.round((scan.estimated_weight_g || 350) / count),
@@ -160,9 +179,11 @@ export const FoodAIScanner: React.FC = () => {
         fat: Math.round((scan.fat || 0) / count),
         confidence: (scan.confidence_per_item && scan.confidence_per_item[name]) || scan.confidence_score || 0.85,
         food_id: scan.food_id || null,
-        is_database_match: Boolean(scan.food_id)
+        is_database_match: Boolean(scan.food_id),
+        specificity_level: "generic"
       }));
     }
+    if (scan.meal_name === 'No Food Detected') return [];
     return [{
       name: scan.meal_name || scan.food_name || 'Scanned Meal',
       portion: scan.serving_size_estimation || "1 serving",
@@ -173,7 +194,8 @@ export const FoodAIScanner: React.FC = () => {
       fat: Math.round(scan.fat || 0),
       confidence: scan.confidence_score || 0.85,
       food_id: scan.food_id || null,
-      is_database_match: Boolean(scan.food_id)
+      is_database_match: Boolean(scan.food_id),
+      specificity_level: "generic"
     }];
   };
 
@@ -729,7 +751,7 @@ export const FoodAIScanner: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Portions & Confidence Stats */}
+                  {/* Portions & Grounded Confidence Stats */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-900">
                       <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Portion & Weight</span>
@@ -737,15 +759,21 @@ export const FoodAIScanner: React.FC = () => {
                         Scale: <span className="text-neonLime font-bold capitalize">{activeScan.serving_size_estimation || "medium"}</span>
                       </p>
                       <p className="text-[11px] text-zinc-400 mt-0.5">
-                        Weight: <span className="text-slate-200 font-bold">~{activeScan.estimated_weight_g || 350}g</span>
+                        Range: <span className="text-slate-200 font-bold">{activeScan.estimated_weight_range || `~${Math.round(activeScan.estimated_weight_g || 350)}g`}</span>
                       </p>
                     </div>
                     <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-900">
-                      <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Analysis Accuracy</span>
+                      <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Grounded Confidence</span>
                       <p className="text-xl font-black text-neonCyan mt-1">
-                        {Math.round((activeScan.nutrition_confidence || activeScan.confidence_score || 0.85) * 100)}%
+                        {Math.round(((activeScan.overall_grounded_confidence ?? activeScan.confidence_score) ?? 0.85) * 100)}%
                       </p>
-                      <span className="text-[8px] text-zinc-650 block mt-0.5">Confidence Level</span>
+                      <span className="text-[8px] text-zinc-400 block mt-0.5 font-bold">
+                        {(((activeScan.overall_grounded_confidence ?? activeScan.confidence_score) ?? 0.85) >= 0.80)
+                          ? "High Grounding"
+                          : (((activeScan.overall_grounded_confidence ?? activeScan.confidence_score) ?? 0.85) >= 0.50)
+                          ? "Moderate Grounding"
+                          : "Low Grounding"}
+                      </span>
                     </div>
                   </div>
 
@@ -907,10 +935,19 @@ export const FoodAIScanner: React.FC = () => {
                                   <Sparkles className="w-2.5 h-2.5" /> AI Estimate
                                 </span>
                               )}
+                              {item.specificity_level && (
+                                <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 text-[8px] font-mono uppercase border border-zinc-800">
+                                  {item.specificity_level}
+                                </span>
+                              )}
                               <span className="text-[9px] text-zinc-400 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded border border-zinc-800">
                                 {item.portion || `${Math.round(item.estimated_weight_g || 100)}g`}
                               </span>
                             </div>
+
+                            {item.evidence && (
+                              <p className="text-[10px] text-zinc-500 italic mt-1">{item.evidence}</p>
+                            )}
 
                             <div className="flex items-center gap-3 mt-1.5 text-[10px] text-zinc-400 font-mono">
                               <span className="text-slate-200 font-semibold">{Math.round(item.calories)} kcal</span>

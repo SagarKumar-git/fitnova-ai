@@ -530,20 +530,26 @@ class FoodRecognitionLog(Base):
 
     @property
     def foods(self):
+        if self.food_name == "No Food Detected" or (self.annotations is not None and isinstance(self.annotations, list) and len(self.annotations) == 0):
+            return []
+
         # 1. Check if detailed food breakdown was stored in annotations
         if self.annotations and isinstance(self.annotations, list):
             items = [
                 ann for ann in self.annotations
-                if isinstance(ann, dict) and "name" in ann and "calories" in ann
+                if isinstance(ann, dict) and "name" in ann and ann.get("name") != "No Food Detected"
             ]
             if items:
                 return items
 
         # 2. Check if detected_items contains list of strings, synthesize breakdown
         if self.detected_items and isinstance(self.detected_items, list) and len(self.detected_items) > 0:
-            count = len(self.detected_items)
+            valid_items = [name for name in self.detected_items if name and name != "No Food Detected"]
+            if not valid_items:
+                return []
+            count = len(valid_items)
             items = []
-            for name in self.detected_items:
+            for name in valid_items:
                 conf = 0.85
                 if isinstance(self.confidence_per_item, dict):
                     conf = float(self.confidence_per_item.get(name, 0.85))
@@ -566,7 +572,7 @@ class FoodRecognitionLog(Base):
             return items
 
         # 3. Fallback to top-level single food
-        if self.food_name:
+        if self.food_name and self.food_name not in ["No Food Detected", "Unknown Meal"]:
             return [{
                 "name": self.food_name,
                 "portion": self.serving_size_estimation or "1 serving",
@@ -590,6 +596,38 @@ class FoodRecognitionLog(Base):
             "carbohydrates": float(self.carbohydrates or 0.0),
             "fat": float(self.fat or 0.0),
         }
+
+    @property
+    def estimated_weight_range(self):
+        if self.estimated_weight_g and self.estimated_weight_g > 0:
+            lo = max(10, int(self.estimated_weight_g * 0.85))
+            hi = int(self.estimated_weight_g * 1.15)
+            return f"~{lo}–{hi} g"
+        return "~300–400 g"
+
+    @property
+    def recognition_confidence(self):
+        if self.annotations and isinstance(self.annotations, list) and len(self.annotations) > 0:
+            confs = [a.get("recognition_confidence", a.get("confidence", 0.85)) for a in self.annotations if isinstance(a, dict)]
+            if confs:
+                return round(sum(confs) / len(confs), 2)
+        return round(float(self.confidence_score or 0.85), 2)
+
+    @property
+    def database_match_confidence(self):
+        if self.annotations and isinstance(self.annotations, list) and len(self.annotations) > 0:
+            confs = [a.get("database_match_confidence", (1.0 if a.get("is_database_match") else 0.5)) for a in self.annotations if isinstance(a, dict)]
+            if confs:
+                return round(sum(confs) / len(confs), 2)
+        return 1.0 if self.food_id else 0.5
+
+    @property
+    def overall_grounded_confidence(self):
+        rec_c = self.recognition_confidence or 0.85
+        db_c = self.database_match_confidence or 0.70
+        nut_c = float(self.nutrition_confidence or self.confidence_score or 0.85)
+        grounded = 0.50 * rec_c + 0.30 * db_c + 0.20 * nut_c
+        return round(max(0.1, min(0.95, grounded)), 2)
 
 
 

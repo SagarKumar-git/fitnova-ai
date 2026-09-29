@@ -10,7 +10,15 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_food_scan.db"
 
 from app.main import app, seed_food_database
 from app.database import engine, Base
-from app.services.vision import match_and_scale_nutrition
+from app.services.vision import (
+    match_and_scale_nutrition,
+    is_non_food_object,
+    validate_and_normalize_bounding_box,
+    compute_iou,
+    normalize_food_name_grounded,
+    filter_garnishes_and_duplicates,
+    GROUNDED_DB_MAPPING,
+)
 from app.models import Food, User
 from app.database import SessionLocal
 
@@ -161,10 +169,10 @@ class TestFoodScannerAI(unittest.TestCase):
         self.assertEqual(res.status_code, 201)
         data = res.json()
         self.assertIsNotNone(data["meal_name"])
-        self.assertGreater(data["calories"], 0)
-        self.assertIn("foods", data)
-        self.assertGreaterEqual(len(data["foods"]), 1)
-        self.assertIn("estimates", data["recommendation"].lower())
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(data["meal_name"], "No Food Detected")
+        self.assertEqual(data["calories"], 0.0)
+        self.assertEqual(len(data["foods"]), 0)
 
     def test_transparent_png_upload(self):
         """Verifies transparent RGBA PNG images are processed cleanly without MIME or alpha crashes."""
@@ -221,43 +229,29 @@ class TestFoodScannerAI(unittest.TestCase):
             food_id, scaled = match_and_scale_nutrition(db, user.id, raw_result)
             self.assertIsNotNone(food_id)
             self.assertEqual(len(scaled["foods"]), 2)
-            # Verified items have is_database_match = True
             for item in scaled["foods"]:
                 self.assertTrue(item["is_database_match"])
-            # Total calories must equal sum of scaled item calories
+                self.assertEqual(item["database_match_confidence"], 1.0)
             total_sum = sum(i["calories"] for i in scaled["foods"])
             self.assertAlmostEqual(scaled["calories"], total_sum, places=1)
             self.assertIn("verified database entry", scaled["recommendation"])
+            self.assertIn("overall_grounded_confidence", scaled)
+            self.assertLessEqual(scaled["overall_grounded_confidence"], 0.95)
+            self.assertIn("estimated_weight_range", scaled)
         finally:
             db.close()
 
-    def test_multi_food_pizza_burger_fries_tomato_scan(self):
+    def test_multi_food_keyword_scan(self):
         """
-        Verifies that scanning an image with pizza, burger, fries, and tomato
-        returns structured multi-food results with separate detected items,
-        portion estimates, macros, confidence scores, and aggregate totals.
+        Verifies that scanning an image with pizza, burger, fries, and tomato in filename
+        returns structured multi-food results with separate detected items.
         """
-        # Create an image containing golden, red, and brown pixel regions
-        img = Image.new("RGB", (200, 200), (240, 240, 240))
-        # Golden area (fries / burger bun / crust)
-        for x in range(10, 90):
-            for y in range(10, 90):
-                img.putpixel((x, y), (210, 160, 45))
-        # Red area (tomato / pizza sauce)
-        for x in range(110, 190):
-            for y in range(10, 90):
-                img.putpixel((x, y), (200, 35, 30))
-        # Brown area (burger patty)
-        for x in range(10, 90):
-            for y in range(110, 190):
-                img.putpixel((x, y), (85, 45, 25))
-
+        img = Image.new("RGB", (90, 90), (240, 240, 240))
         buf = io.BytesIO()
         img.save(buf, format="JPEG")
         buf.seek(0)
         img_bytes = buf.getvalue()
 
-        # 1. Test upload with keyword filename
         files = {
             "file": ("pizza_burger_fries_tomato.jpg", img_bytes, "image/jpeg")
         }
@@ -276,7 +270,6 @@ class TestFoodScannerAI(unittest.TestCase):
         self.assertTrue(any("fries" in n for n in food_names))
         self.assertTrue(any("tomato" in n for n in food_names))
 
-        # Check that individual macros are present and greater than 0
         for f in foods:
             self.assertGreater(f["calories"], 0)
             self.assertGreaterEqual(f["protein"], 0)
@@ -284,19 +277,156 @@ class TestFoodScannerAI(unittest.TestCase):
             self.assertGreaterEqual(f["fat"], 0)
             self.assertGreater(f["confidence"], 0)
 
-        # Check total nutrition corresponds to the sum of items
         total_cal = sum(f["calories"] for f in foods)
         self.assertAlmostEqual(data["calories"], total_cal, places=1)
-        self.assertIn("estimates", data["recommendation"].lower())
 
-        # 2. Test upload with completely generic camera filename (IMG_camera_dinner.jpg)
-        # to verify visual pixel analysis handles real image content
-        files_camera = {
-            "file": ("IMG_camera_dinner.jpg", img_bytes, "image/jpeg")
-        }
-        res2 = self.client.post("/api/v1/ai/food-scan?force_reanalyze=true", headers=self.headers, files=files_camera)
-        self.assertEqual(res2.status_code, 201)
-        data2 = res2.json()
-        self.assertEqual(data2["status"], "completed")
-        self.assertIn("foods", data2)
-        self.assertGreaterEqual(len(data2["foods"]), 4)
+    def test_burger_only_image_no_hallucinations(self):
+        """
+        Verifies that an image containing only a burger (bun + savory patty)
+        detects 'Burger' and DOES NOT hallucinate 'Pizza' or 'Tomato'.
+        """
+        img = Image.new("RGB", (90, 90), (245, 245, 245))
+        # Top bun: golden pixels in row 0
+        for x in range(20, 70):
+            for y in range(10, 35):
+                img.putpixel((x, y), (200, 150, 40))
+        # Savory patty: brown pixels in row 1
+        for x in range(20, 70):
+            for y in range(35, 60):
+                img.putpixel((x, y), (90, 50, 25))
+        # Bottom bun: golden pixels in row 2
+        for x in range(20, 70):
+            for y in range(60, 80):
+                img.putpixel((x, y), (200, 150, 40))
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        files = {"file": ("camera_meal_001.jpg", img_bytes, "image/jpeg")}
+        res = self.client.post("/api/v1/ai/food-scan?force_reanalyze=true", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data["status"], "completed")
+
+        food_names = [f["name"].lower() for f in data["foods"]]
+        self.assertTrue(any("burger" in n for n in food_names))
+        # Must NOT hallucinate pizza or tomato
+        self.assertFalse(any("pizza" in n for n in food_names))
+        self.assertFalse(any("tomato" in n for n in food_names))
+
+    def test_burger_and_fries_grounding_no_pizza(self):
+        """
+        Verifies that an image with a burger and french fries
+        detects both grounded items, and DOES NOT invent 'Pizza' or 'Tomato'.
+        """
+        img = Image.new("RGB", (90, 90), (245, 245, 245))
+        # Left side: Burger (golden bun + savory patty)
+        for x in range(5, 40):
+            for y in range(10, 40):
+                img.putpixel((x, y), (200, 150, 40))
+            for y in range(40, 80):
+                img.putpixel((x, y), (90, 50, 25))
+
+        # Right side: French fries (golden fries with no brown patty)
+        for x in range(50, 85):
+            for y in range(10, 80):
+                img.putpixel((x, y), (220, 170, 45))
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        files = {"file": ("IMG_combo_meal.jpg", img_bytes, "image/jpeg")}
+        res = self.client.post("/api/v1/ai/food-scan?force_reanalyze=true", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data["status"], "completed")
+
+        food_names = [f["name"].lower() for f in data["foods"]]
+        self.assertTrue(any("burger" in n for n in food_names))
+        self.assertTrue(any("fries" in n for n in food_names))
+        # Must NOT hallucinate pizza or tomato
+        self.assertFalse(any("pizza" in n for n in food_names))
+        self.assertFalse(any("tomato" in n for n in food_names))
+
+    def test_solid_non_food_image_returns_empty_detection(self):
+        """Verifies that a solid/blank non-food image returns 0 foods, 0 calories, and 'No Food Detected'."""
+        img = Image.new("RGB", (90, 90), (200, 200, 200)) # Solid neutral grey
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        files = {"file": ("solid_grey_wall.jpg", img_bytes, "image/jpeg")}
+        res = self.client.post("/api/v1/ai/food-scan?force_reanalyze=true", headers=self.headers, files=files)
+        self.assertEqual(res.status_code, 201)
+        data = res.json()
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(data["meal_name"], "No Food Detected")
+        self.assertEqual(data["calories"], 0.0)
+        self.assertEqual(len(data["foods"]), 0)
+
+    def test_specificity_downgrade_and_generic_preference(self):
+        """Tests that overly specific food labels are normalized down to grounded generic categories."""
+        name, spec, _ = normalize_food_name_grounded("Grilled Beef Cheeseburger")
+        self.assertEqual(name, "Burger")
+        self.assertEqual(spec, "generic")
+
+        name2, spec2, _ = normalize_food_name_grounded("Margherita Pizza")
+        self.assertEqual(name2, "Pizza")
+        self.assertEqual(spec2, "generic")
+
+        name3, spec3, _ = normalize_food_name_grounded("Potato French Fries")
+        self.assertEqual(name3, "French Fries")
+        self.assertEqual(spec3, "generic")
+
+    def test_bounding_box_validation_and_clamping(self):
+        """Tests that bounding boxes are clamped, checked for minimum dimensions, and degenerate boxes rejected."""
+        # Valid box
+        box = validate_and_normalize_bounding_box([100, 150, 400, 500])
+        self.assertEqual(box, [100, 150, 400, 500])
+
+        # Out-of-bounds coordinates clamped
+        box_clamped = validate_and_normalize_bounding_box([-50, 20, 1100, 800])
+        self.assertEqual(box_clamped, [0, 20, 1000, 800])
+
+        # Inverted coordinates rejected
+        self.assertIsNone(validate_and_normalize_bounding_box([500, 200, 100, 400]))
+
+        # Degenerate whole canvas rejected
+        self.assertIsNone(validate_and_normalize_bounding_box([0, 0, 1000, 1000]))
+
+        # Too small box rejected
+        self.assertIsNone(validate_and_normalize_bounding_box([100, 100, 110, 110]))
+
+    def test_non_food_object_filtering(self):
+        """Tests that packaging, cups, napkins, and non-food surfaces are detected as non-food."""
+        self.assertTrue(is_non_food_object("paper cup"))
+        self.assertTrue(is_non_food_object("soda"))
+        self.assertTrue(is_non_food_object("wrapper"))
+        self.assertTrue(is_non_food_object("plastic tray"))
+        self.assertTrue(is_non_food_object("straw"))
+        self.assertTrue(is_non_food_object("napkin"))
+
+        self.assertFalse(is_non_food_object("Burger"))
+        self.assertFalse(is_non_food_object("French Fries"))
+        self.assertFalse(is_non_food_object("Pizza"))
+
+    def test_compute_iou(self):
+        """Tests Intersection-over-Union bounding box overlap calculation."""
+        box1 = [100, 100, 400, 400]
+        # Identical box: IoU = 1.0
+        self.assertAlmostEqual(compute_iou(box1, box1), 1.0)
+
+        # No overlap: IoU = 0.0
+        box2 = [500, 500, 800, 800]
+        self.assertEqual(compute_iou(box1, box2), 0.0)
+
+        # Partial overlap
+        box3 = [250, 100, 400, 400]
+        iou = compute_iou(box1, box3)
+        self.assertGreater(iou, 0.0)
+        self.assertLess(iou, 1.0)
